@@ -24,7 +24,26 @@ public sealed class ProviderOption(UpdateProviderDefinition provider, bool isSel
     public event PropertyChangedEventHandler? PropertyChanged;
 }
 
-public sealed record ScanPresetOption(ScanPreset Value, string DisplayName, string Description);
+public sealed class ScanPresetOption(ScanPreset value, string displayName, string description)
+{
+    public ScanPreset Value { get; } = value;
+    public string DisplayName { get; } = displayName;
+    public string Description { get; } = description;
+}
+
+public sealed class DiagnosticFindingItem(DiagnosticFinding finding)
+{
+    public string Title => finding.Title;
+    public string Summary => finding.Summary;
+    public string? Recommendation => finding.Recommendation;
+}
+
+public sealed class UpdateHistoryItem(UpdateHistoryRecord record)
+{
+    public DateTimeOffset? Date => record.Date;
+    public string? Title => record.Title;
+    public int ResultCode => record.ResultCode;
+}
 
 public sealed class UpdateListItem(UpdateRecord update)
 {

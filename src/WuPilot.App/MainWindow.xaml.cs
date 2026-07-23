@@ -31,10 +31,10 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     public ObservableCollection<ProviderOption> ProviderOptions { get; } = [];
     public ObservableCollection<ScanPresetOption> PresetOptions { get; } = [];
     public ObservableCollection<UpdateListItem> VisibleUpdates { get; } = [];
-    public ObservableCollection<DiagnosticFinding> DiagnosticFindings { get; } = [];
+    public ObservableCollection<DiagnosticFindingItem> DiagnosticFindings { get; } = [];
     public ObservableCollection<KeyValuePair<string, string?>> ServiceStates { get; } = [];
     public ObservableCollection<KeyValuePair<string, string?>> PolicyStates { get; } = [];
-    public ObservableCollection<UpdateHistoryRecord> UpdateHistory { get; } = [];
+    public ObservableCollection<UpdateHistoryItem> UpdateHistory { get; } = [];
     public ObservableCollection<string> ActivityItems { get; } = [];
 
     public bool HasScanReport => _scanReport is not null;
@@ -209,10 +209,10 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             _diagnostics = await _diagnosticService.CollectAsync(CreateProgress(), _operationCancellation.Token);
-            Replace(DiagnosticFindings, _diagnostics.Findings);
+            Replace(DiagnosticFindings, _diagnostics.Findings.Select(static finding => new DiagnosticFindingItem(finding)));
             Replace(ServiceStates, _diagnostics.Services.OrderBy(static pair => pair.Key));
             Replace(PolicyStates, _diagnostics.Policies.Where(static pair => pair.Value is not null).OrderBy(static pair => pair.Key));
-            Replace(UpdateHistory, (_diagnostics.UpdateHistory ?? []).Take(25));
+            Replace(UpdateHistory, (_diagnostics.UpdateHistory ?? []).Take(25).Select(static record => new UpdateHistoryItem(record)));
             Log($"Diagnostics {_diagnostics.SnapshotId} completed with {_diagnostics.Findings.Count} findings.");
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -380,6 +380,8 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private void PresetCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (CustomCriteriaBox is null) return;
+
         CustomCriteriaBox.Visibility = PresetCombo.SelectedItem is ScanPresetOption { Value: ScanPreset.Custom }
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -387,6 +389,8 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
+        if (ScanView is null || DiagnosticsView is null || ActivityView is null || AboutView is null) return;
+
         var tag = args.SelectedItemContainer?.Tag as string ?? "scan";
         ScanView.Visibility = tag == "scan" ? Visibility.Visible : Visibility.Collapsed;
         DiagnosticsView.Visibility = tag == "diagnostics" ? Visibility.Visible : Visibility.Collapsed;
