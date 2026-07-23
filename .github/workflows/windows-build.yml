@@ -1,0 +1,33 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore WuPilot.slnx
+      - name: Test core
+        run: dotnet test tests/WuPilot.Core.Tests/WuPilot.Core.Tests.csproj --configuration Release --no-restore
+      - name: Test Windows infrastructure
+        run: dotnet test tests/WuPilot.Infrastructure.Tests/WuPilot.Infrastructure.Tests.csproj --configuration Release --no-restore
+      - name: Compile WinUI code-behind gate
+        run: dotnet build tests/WuPilot.App.CodeChecks/WuPilot.App.CodeChecks.csproj --configuration Release --no-restore
+      - name: Publish x64 app
+        run: dotnet publish src/WuPilot.App/WuPilot.App.csproj --configuration Release --no-restore -p:Platform=x64 -r win-x64 --self-contained true --output artifacts/WuPilot-win-x64
+      - name: Upload unpackaged app
+        uses: actions/upload-artifact@v4
+        with:
+          name: WuPilot-win-x64
+          path: artifacts/WuPilot-win-x64/
+          if-no-files-found: error

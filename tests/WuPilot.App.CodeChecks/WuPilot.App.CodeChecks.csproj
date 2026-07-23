@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <RootNamespace>WuPilot.App</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" ExcludeAssets="runtime;build;buildTransitive;native;contentfiles;analyzers" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/WuPilot.Core/WuPilot.Core.csproj" />
+    <ProjectReference Include="../../src/WuPilot.Infrastructure.Windows/WuPilot.Infrastructure.Windows.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../src/WuPilot.App/App.xaml.cs" Link="App.xaml.cs" />
+    <Compile Include="../../src/WuPilot.App/MainWindow.xaml.cs" Link="MainWindow.xaml.cs" />
+    <Compile Include="../../src/WuPilot.App/UiModels.cs" Link="UiModels.cs" />
+    <Compile Include="GeneratedXamlStubs.cs" />
+  </ItemGroup>
+</Project>

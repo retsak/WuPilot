@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="src/WuPilot.Core/WuPilot.Core.csproj" />
+  <Project Path="src/WuPilot.Infrastructure.Windows/WuPilot.Infrastructure.Windows.csproj" />
+  <Project Path="src/WuPilot.App/WuPilot.App.csproj" />
+  <Project Path="tests/WuPilot.Core.Tests/WuPilot.Core.Tests.csproj" />
+  <Project Path="tests/WuPilot.Infrastructure.Tests/WuPilot.Infrastructure.Tests.csproj" />
+  <Project Path="tests/WuPilot.App.CodeChecks/WuPilot.App.CodeChecks.csproj" />
+</Solution>
