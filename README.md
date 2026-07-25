@@ -67,6 +67,26 @@ Provider failures are retained alongside successful results. If Microsoft Update
 
 ![Microsoft Update not registered read-only guidance](docs/images/windows-validation-2026-07-24/microsoft-update-unregistered.png)
 
+### 4. Inspect diagnostics before making changes
+
+Open **Diagnostics** from the left navigation and select **Refresh checks**. Review findings, recent update history, service state, and policy evidence before considering a repair.
+
+The repair buttons are intentionally separate from diagnostics. Each repair action displays a confirmation first. Cache reset renames existing stores to recoverable timestamped paths, and WuPilot does not restart the device automatically.
+
+![Diagnostics and repair tab with read-only checks and bounded repair actions](docs/images/windows-validation-2026-07-24/diagnostics-and-repair.png)
+
+### 5. Review session activity
+
+Open **Activity** to review scans, diagnostics, repairs, and their results from the current session. Export an evidence bundle when a durable support record is required.
+
+![Activity tab showing session events](docs/images/windows-validation-2026-07-24/activity.png)
+
+### 6. Review the safety model and references
+
+Open **About** for WuPilot's policy boundaries, safety model, and links to the relevant WinUI, Windows Update Agent, and Intune documentation.
+
+![About tab showing the WuPilot safety model and Microsoft references](docs/images/windows-validation-2026-07-24/about.png)
+
 ## Build and test
 
 For an iterative developer build:
