@@ -59,45 +59,71 @@ Use **Save current** to keep a provider-and-criteria combination as a reusable s
 
 The **Registered sources** tab is a read-only inventory of WUA services already present on the device. Selecting a source can populate the custom service field for a later scan; it never calls WUA service-registration methods. **Update history** provides a searchable view of local install history, while **Watchlist** tracks whether chosen updates remain offered.
 
+For a control-by-control description of scanning, comparison, watchlists, diagnostics, history, exports, and single-update actions, see the [feature guide](docs/FEATURES.md).
+
 Use `-Platform ARM64` for native ARM64. The full release gate is documented in [`docs/WINDOWS-VALIDATION.md`](docs/WINDOWS-VALIDATION.md), and `scripts/Test-WuaReadOnly.ps1` provides a non-mutating WUA smoke test independent of the UI.
 
 ### 1. Start with the safe defaults
 
-Policy default and the missing-driver profile are selected at startup. Download and Install remain unavailable until an applicable update is selected.
+Policy default and the missing-driver search profile are selected at startup. Provider shortcuts make it easy to switch between policy-only and direct Microsoft comparisons. Saved profiles can restore sources, criteria, supersedence, custom service IDs, and offline catalog paths. Download and Install remain unavailable until one applicable update is selected.
 
-![WuPilot startup screen with Policy default and Missing drivers selected](docs/images/windows-validation-2026-07-24/startup.png)
+![WuPilot startup screen with source shortcuts, saved profiles, and Missing drivers selected](docs/images/windows-validation-2026-07-25/startup.png)
 
-### 2. Run and compare scans
+### 2. Review scan insights and narrow the results
 
-Select one or more registered sources, then choose **Start scan**. The results header summarizes updates, drivers, and source failures. This example completed a Microsoft Store service scan with no applicable updates.
+After a scan, WuPilot summarizes update kinds and state, known download size, restart exposure, duration, and source health. Search matches titles, sources, KBs, and CVEs; filters isolate drivers, software, installed, downloaded, hidden, or restart-required updates. Sorting supports title, size, deployment-change date, and severity. Multi-selection is available for export, while device-changing actions remain limited to one reviewed update.
 
-![Completed Microsoft Store service scan](docs/images/windows-validation-2026-07-24/store-scan.png)
+![Completed scan with saved profile, insights, technician notes, filters, and update details](docs/images/windows-validation-2026-07-25/scan-results.png)
 
-### 3. Review source-specific guidance
+### 3. Preserve partial results and retry only failed sources
 
-Provider failures are retained alongside successful results. If Microsoft Update is not registered, WuPilot explains the condition and leaves registration unchanged instead of silently opting in the device.
+Provider failures are retained alongside successful results. If Microsoft Update is not registered, WuPilot explains the condition and leaves registration unchanged instead of silently opting in the device. **Retry failed sources** re-queries only failures and merges the retry with results from sources that already succeeded.
 
-![Microsoft Update not registered read-only guidance](docs/images/windows-validation-2026-07-24/microsoft-update-unregistered.png)
+![Microsoft Update not registered guidance with retry failed sources available](docs/images/windows-validation-2026-07-25/microsoft-update-unregistered.png)
 
-### 4. Inspect diagnostics before making changes
+### 4. Compare the two most recent scans
 
-Open **Diagnostics** from the left navigation and select **Refresh checks**. Review findings, recent update history, service state, and policy evidence before considering a repair.
+**Compare scans** separates newly offered, no-longer-offered, revised, and state-changed updates while counting unchanged records. WuPilot also warns when the sources or criteria differ, because that context can explain apparent additions and removals. Comparisons are session-only and do not change update state.
 
-The repair buttons are intentionally separate from diagnostics. Each repair action displays a confirmation first. Cache reset renames existing stores to recoverable timestamped paths, and WuPilot does not restart the device automatically.
+![Comparison of new, removed, revised, and state-changed updates](docs/images/windows-validation-2026-07-25/compare-scans.png)
 
-![Diagnostics and repair tab with read-only checks and bounded repair actions](docs/images/windows-validation-2026-07-24/diagnostics-and-repair.png)
+### 5. Track important updates
 
-### 5. Review session activity
+The persistent **Watchlist** records UpdateID/revision, source, state, and driver version/date. A later scan marks each item as still offered or no longer offered without downloading, installing, hiding, approving, or deploying it.
 
-Open **Activity** to review scans, diagnostics, repairs, and their results from the current session. Export an evidence bundle when a durable support record is required.
+![Watchlist showing offered and no-longer-offered updates after a later scan](docs/images/windows-validation-2026-07-25/watchlist.png)
 
-![Activity tab showing session events](docs/images/windows-validation-2026-07-24/activity.png)
+### 6. Inventory registered WUA sources
 
-### 6. Review the safety model and references
+**Registered sources** shows each existing WUA service GUID, management/default role, scan-package status, and Windows-update capability. **Use for custom scan** copies the selected GUID into the scan setup; it does not register a service or change the Automatic Updates default.
 
-Open **About** for WuPilot's policy boundaries, safety model, and links to the relevant WinUI, Windows Update Agent, and Intune documentation.
+![Read-only registered Windows Update Agent source inventory](docs/images/windows-validation-2026-07-25/registered-sources.png)
 
-![About tab showing the WuPilot safety model and Microsoft references](docs/images/windows-validation-2026-07-24/about.png)
+### 7. Inspect diagnostics before making changes
+
+Open **Diagnostics** and select **Refresh checks** to review findings, history, services, and policy evidence. Findings can be searched, filtered by severity, and copied.
+
+Repair buttons are intentionally separate from diagnostics. Each action displays a confirmation first. Cache reset renames existing stores to recoverable timestamped paths, and WuPilot does not restart the device automatically.
+
+![Diagnostics, severity filters, service and policy evidence, and bounded repair actions](docs/images/windows-validation-2026-07-25/diagnostics-and-repair.png)
+
+### 8. Search local update history
+
+**Update history** reads up to 500 recent WUA operations without starting a scan. Search by title, HRESULT, source, or UpdateID, and isolate failures or partial results for troubleshooting.
+
+![Searchable Windows Update history filtered to failures and partial results](docs/images/windows-validation-2026-07-25/update-history.png)
+
+### 9. Review session activity
+
+**Activity** records scans, retries, diagnostics, repairs, exports, watchlist changes, and action results for the current session. Copy it for a quick ticket note; export an evidence bundle when a durable support record is required.
+
+![Activity tab showing scan, comparison, watchlist, source, and profile events](docs/images/windows-validation-2026-07-25/activity.png)
+
+### 10. Review safety boundaries and appearance
+
+**About** explains WuPilot's policy boundaries and safety model, links to the relevant WinUI, WUA, and Intune documentation, and provides system, light, and dark appearance controls.
+
+![About tab showing the safety model, appearance controls, and Microsoft references](docs/images/windows-validation-2026-07-25/about.png)
 
 ## Build and test
 

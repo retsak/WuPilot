@@ -26,11 +26,19 @@
     <ProjectReference Include="../WuPilot.Core/WuPilot.Core.csproj" />
     <ProjectReference Include="../WuPilot.Infrastructure.Windows/WuPilot.Infrastructure.Windows.csproj" />
   </ItemGroup>
-  <Target Name="CopyApplicationPriToPublishOutput" AfterTargets="Publish">
+  <Target Name="CopyWinUiResourcesToPublishOutput" AfterTargets="Publish">
     <Copy
       SourceFiles="$(TargetDir)$(ProjectPriFileName)"
       DestinationFolder="$(PublishDir)"
       SkipUnchangedFiles="true"
       Condition="Exists('$(TargetDir)$(ProjectPriFileName)')" />
+    <ItemGroup>
+      <CompiledXamlResources Include="$(IntermediateOutputPath)*.xbf" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(CompiledXamlResources)"
+      DestinationFolder="$(PublishDir)"
+      SkipUnchangedFiles="true"
+      Condition="'@(CompiledXamlResources)' != ''" />
   </Target>
 </Project>

@@ -11,3 +11,4 @@ artifacts/
 *.etl
 *.evtx
 .DS_Store
+.dotnet/
