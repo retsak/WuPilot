@@ -144,7 +144,8 @@ public sealed record ScanReport(
     string Criteria,
     DeviceIdentity Device,
     IReadOnlyList<ProviderScanResult> ProviderResults,
-    IReadOnlyList<UpdateRecord> Updates)
+    IReadOnlyList<UpdateRecord> Updates,
+    string? TechnicianNotes = null)
 {
     public int DriverCount => Updates.Count(static update => update.IsDriver);
     public int SoftwareCount => Updates.Count - DriverCount;

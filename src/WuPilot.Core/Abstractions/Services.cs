@@ -37,3 +37,23 @@ public interface IEvidenceExportService
 {
     Task<string> ExportAsync(ScanReport report, DiagnosticSnapshot? diagnostics, IEnumerable<UpdateRecord>? selection, CancellationToken cancellationToken);
 }
+
+public interface IScanProfileStore
+{
+    Task<IReadOnlyList<SavedScanProfile>> GetAllAsync(CancellationToken cancellationToken);
+    Task SaveAsync(SavedScanProfile profile, CancellationToken cancellationToken);
+    Task DeleteAsync(Guid profileId, CancellationToken cancellationToken);
+}
+
+public interface IUpdateSourceDiscoveryService
+{
+    Task<IReadOnlyList<UpdateSourceRegistration>> GetRegisteredSourcesAsync(CancellationToken cancellationToken);
+}
+
+public interface IWatchlistStore
+{
+    Task<IReadOnlyList<WatchedUpdate>> GetAllAsync(CancellationToken cancellationToken);
+    Task SaveAsync(WatchedUpdate update, CancellationToken cancellationToken);
+    Task SaveAllAsync(IEnumerable<WatchedUpdate> updates, CancellationToken cancellationToken);
+    Task DeleteAsync(string updateId, CancellationToken cancellationToken);
+}

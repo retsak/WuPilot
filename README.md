@@ -15,13 +15,20 @@ The application uses the supported Windows Update Agent (WUA) COM API. Microsoft
   - a custom registered WUA service GUID
   - a Microsoft-signed offline `Wsusscn2.cab` security catalog
 - Use safe presets for missing drivers, missing software, installed, hidden, all applicable, or advanced WUA criteria.
+- Save reusable scan profiles that remember providers, criteria, supersedence, custom service IDs, and offline catalog paths.
 - Compare/deduplicate results by WUA UpdateID and revision while retaining every source that offered the update.
+- Compare the latest two scans to identify newly offered, removed, revised, and state-changed updates.
+- Retry only failed providers without repeating successful source scans.
 - Inspect title, description, KB/CVE IDs, categories, sizes, install state, severity, reboot behavior, and detailed driver metadata.
+- Search, sort, and filter scan results by text, update kind, state, size, date, severity, and restart requirement.
 - Correlate an offered driver to the currently installed signed PnP driver using exact/family hardware identifiers, including current version/date, INF, signer, and match confidence.
+- Track selected updates in a persistent watchlist and see whether each one is still offered after a later scan.
+- Browse and filter up to 500 local Windows Update history events, including failures and HRESULT values.
+- Inspect every registered WUA source and reuse its service GUID for a custom read-only scan without registering or changing services.
 - Download, install, hide, or show one revalidated update with a confirmation. WuPilot never restarts the device automatically.
 - Diagnose update services, registered WUA sources, Windows Update/MDM policy registry values, WinHTTP proxy, Microsoft content DNS, WUA version/history, BITS jobs, disk space, Entra join identity, and pending restart state.
 - Start required services, run DISM health operations, generate `WindowsUpdate.log`, or reset update caches. Cache reset renames existing stores to timestamped recovery paths rather than deleting them.
-- Export JSON, CSV, and a human-readable HTML review bundle plus Windows Update events, CBS errors, SetupAPI driver-install evidence, BITS state, and existing SetupDiag results.
+- Export one or several selected update records, technician notes, JSON, CSV, and a human-readable HTML review bundle plus Windows Update events, CBS errors, SetupAPI driver-install evidence, BITS state, and existing SetupDiag results.
 
 ## Quick start
 
@@ -41,11 +48,16 @@ After launch:
 1. Leave **Policy default** selected for the first scan.
 2. Choose a search profile. **Missing drivers** is a useful starting point for driver troubleshooting.
 3. Select **Start scan**. Scanning is read-only and may take several minutes.
-4. Select an offered update to review its source, identity, applicability, driver match, signer, version, and date.
-5. Optionally export an evidence bundle for review.
-6. Use **Download** or **Install** only after reviewing the selected update. Each action requires a separate confirmation and defaults to **Cancel**; WuPilot never restarts the device automatically.
+4. Use the search, state filter, and sort controls to narrow the results. You can select several updates for export, but device-changing actions remain limited to one selected update.
+5. Select an offered update to review its source, identity, applicability, driver match, signer, version, and date. Add it to the **Watchlist** if you need to follow it across later scans.
+6. Add optional technician notes and export an evidence bundle for review.
+7. Use **Download**, **Install**, **Hide**, or **Show** only after reviewing one selected update. Each action requires a separate confirmation and defaults to **Cancel**; WuPilot never restarts the device automatically.
 
 To compare sources, select **Windows Update**, **Microsoft Update**, or **Microsoft Store service** and scan again. A source must already be registered with Windows Update Agent; WuPilot does not register services during a read-only scan.
+
+Use **Save current** to keep a provider-and-criteria combination as a reusable scan profile. After two scans, open **Compare scans** to review what changed. If one source failed, use **Retry failed sources** to preserve successful results and re-query only the failures.
+
+The **Registered sources** tab is a read-only inventory of WUA services already present on the device. Selecting a source can populate the custom service field for a later scan; it never calls WUA service-registration methods. **Update history** provides a searchable view of local install history, while **Watchlist** tracks whether chosen updates remain offered.
 
 Use `-Platform ARM64` for native ARM64. The full release gate is documented in [`docs/WINDOWS-VALIDATION.md`](docs/WINDOWS-VALIDATION.md), and `scripts/Test-WuaReadOnly.ps1` provides a non-mutating WUA smoke test independent of the UI.
 
@@ -104,12 +116,15 @@ For a tested self-contained output, use the Quick start build script; the result
 
 1. Run diagnostics before changing anything. Save policy-related findings rather than immediately “fixing” intentional management settings.
 2. Scan **Policy default** first to capture the managed experience.
-3. For comparison, add **Windows Update**, **Microsoft Update**, or **Microsoft Store service**. Use the missing-driver preset with Windows Update to query applicable driver metadata. A direct-source scan does not defeat policy, endpoint restrictions, or Microsoft applicability rules.
-4. Inspect driver manufacturer, provider, model, class, hardware ID, date, inferred version, and source.
+3. Save the scan setup as a profile when it will be reused for the same device class or support playbook.
+4. For comparison, add **Windows Update**, **Microsoft Update**, or **Microsoft Store service**. Use the missing-driver preset with Windows Update to query applicable driver metadata. A direct-source scan does not defeat policy, endpoint restrictions, or Microsoft applicability rules.
+5. Open **Compare scans** after another scan to distinguish newly offered updates from provider or state changes.
+6. Inspect driver manufacturer, provider, model, class, hardware ID, date, inferred version, and source.
    Compare the installed driver match and confidence before concluding the offered package is an upgrade for the intended device.
-5. Optionally download or install on this single test device. Re-scan afterward.
-6. Export evidence and send the bundle to the Intune administrator.
-7. In Intune, match on name, manufacturer, version/date, class, and applicable devices. Use a deployment ring before broad approval.
+7. Add important updates to the watchlist, include ticket context in technician notes, and export evidence.
+8. Optionally download or install on this single test device after the confirmation. Re-scan afterward.
+9. Send the evidence bundle to the Intune administrator.
+10. In Intune, match on name, manufacturer, version/date, class, and applicable devices. Use a deployment ring before broad approval.
 
 ## Intune identity caveat
 
