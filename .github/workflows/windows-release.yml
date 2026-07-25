@@ -74,7 +74,7 @@ jobs:
       - name: Verify publish resources
         shell: pwsh
         run: |
-          $required = @('WuPilot.exe', 'WuPilot.pri', 'App.xbf', 'MainWindow.xbf')
+          $required = @('WuPilot.exe', 'WuPilot.pri', 'App.xbf', 'MainWindow.xbf', 'Assets/WuPilot.ico')
           foreach ($runtime in @('win-x64', 'win-arm64')) {
             foreach ($file in $required) {
               $path = "artifacts/WuPilot-$runtime/$file"

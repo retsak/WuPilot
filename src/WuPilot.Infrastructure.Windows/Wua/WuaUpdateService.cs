@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.CSharp.RuntimeBinder;
 using WuPilot.Core.Abstractions;
@@ -78,10 +79,17 @@ public sealed class WuaUpdateService(
     public async Task<UpdateActionResult> ExecuteAsync(UpdateActionRequest request, IProgress<OperationProgress>? progress, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        var timer = Stopwatch.StartNew();
         await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await Task.Run(() => ExecuteCore(request, progress, cancellationToken), CancellationToken.None).ConfigureAwait(false);
+            var result = await Task.Run(() => ExecuteCore(request, progress, cancellationToken), CancellationToken.None).ConfigureAwait(false);
+            timer.Stop();
+            return result with
+            {
+                TotalDuration = timer.Elapsed,
+                DownloadBytes = request.Update.MaximumDownloadBytes
+            };
         }
         finally
         {
@@ -213,6 +221,9 @@ public sealed class WuaUpdateService(
         object? resultObject = null;
         object? collectionObject = null;
         object? serviceManagerObject = null;
+        var revalidationDuration = TimeSpan.Zero;
+        var downloadDuration = TimeSpan.Zero;
+        var installDuration = TimeSpan.Zero;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -230,18 +241,21 @@ public sealed class WuaUpdateService(
             dynamic searcher = session.CreateUpdateSearcher();
             searcherObject = searcher;
             ConfigureSearcher(searcher, request.Provider, online: true, includeSuperseded: true);
+            var phaseTimer = Stopwatch.StartNew();
             dynamic result = searcher.Search(ScanCriteriaBuilder.ForIdentity(request.Update.UpdateId, request.Update.RevisionNumber));
+            phaseTimer.Stop();
+            revalidationDuration = phaseTimer.Elapsed;
             resultObject = result;
             if (Convert.ToInt32(result.Updates.Count) == 0)
             {
-                return Failure(request, unchecked((int)0x80240017), "The update is no longer applicable from this provider.");
+                return Failure(request, unchecked((int)0x80240017), "The update is no longer applicable from this provider.") with { RevalidationDuration = revalidationDuration };
             }
 
             dynamic update = result.Updates.Item(0);
             if (request.Action is UpdateAction.Hide or UpdateAction.Show)
             {
                 update.IsHidden = request.Action == UpdateAction.Hide;
-                return Success(request, $"Update is now {(request.Action == UpdateAction.Hide ? "hidden" : "visible")}.");
+                return Success(request, $"Update is now {(request.Action == UpdateAction.Hide ? "hidden" : "visible")}.") with { RevalidationDuration = revalidationDuration };
             }
 
             if (!WuaCom.Try<bool>(() => update.EulaAccepted) && !request.AcceptEula)
@@ -269,25 +283,32 @@ public sealed class WuaUpdateService(
                 progress?.Report(new OperationProgress("Download", "Downloading update payload…", 40, request.Provider.Id));
                 dynamic downloader = session.CreateUpdateDownloader();
                 downloader.Updates = collection;
+                phaseTimer.Restart();
                 dynamic downloadResult = downloader.Download();
+                phaseTimer.Stop();
+                downloadDuration = phaseTimer.Elapsed;
                 var downloadResultCode = WuaCom.Try<int>(() => downloadResult.ResultCode);
                 var downloadHResult = WuaCom.Try<int>(() => downloadResult.HResult);
                 if (downloadResultCode is not (2 or 3))
                 {
-                    return new UpdateActionResult(request.Action, request.Update.UpdateId, downloadResultCode, downloadHResult, false, "Download failed.", DateTimeOffset.Now);
+                    return new UpdateActionResult(request.Action, request.Update.UpdateId, downloadResultCode, downloadHResult, false, "Download failed.", DateTimeOffset.Now,
+                        revalidationDuration, downloadDuration);
                 }
             }
 
             if (request.Action == UpdateAction.Download)
             {
-                return Success(request, "Update downloaded successfully.");
+                return Success(request, "Update downloaded successfully.") with { RevalidationDuration = revalidationDuration, DownloadDuration = downloadDuration };
             }
 
             cancellationToken.ThrowIfCancellationRequested();
             progress?.Report(new OperationProgress("Install", "Installing update…", 75, request.Provider.Id));
             dynamic installer = session.CreateUpdateInstaller();
             installer.Updates = collection;
+            phaseTimer.Restart();
             dynamic installResult = installer.Install();
+            phaseTimer.Stop();
+            installDuration = phaseTimer.Elapsed;
             var resultCode = WuaCom.Try<int>(() => installResult.ResultCode);
             var hResult = WuaCom.Try<int>(() => installResult.HResult);
             var rebootRequired = WuaCom.Try<bool>(() => installResult.RebootRequired);
@@ -299,11 +320,19 @@ public sealed class WuaUpdateService(
                 hResult,
                 rebootRequired,
                 resultCode is 2 or 3 ? "Installation completed." : $"Installation failed. {explanation?.Explanation} {explanation?.Recommendation}",
-                DateTimeOffset.Now);
+                DateTimeOffset.Now,
+                revalidationDuration,
+                downloadDuration,
+                installDuration);
         }
         catch (Exception exception) when (exception is COMException or RuntimeBinderException)
         {
-            return Failure(request, exception.HResult, $"{exception.Message} {HResultCatalog.Explain(exception.HResult).Recommendation}");
+            return Failure(request, exception.HResult, $"{exception.Message} {HResultCatalog.Explain(exception.HResult).Recommendation}") with
+            {
+                RevalidationDuration = revalidationDuration,
+                DownloadDuration = downloadDuration,
+                InstallDuration = installDuration
+            };
         }
         finally
         {

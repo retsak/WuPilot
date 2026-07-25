@@ -21,7 +21,12 @@ public sealed record UpdateActionResult(
     int HResult,
     bool RebootRequired,
     string Message,
-    DateTimeOffset CompletedAt)
+    DateTimeOffset CompletedAt,
+    TimeSpan RevalidationDuration = default,
+    TimeSpan DownloadDuration = default,
+    TimeSpan InstallDuration = default,
+    TimeSpan TotalDuration = default,
+    long? DownloadBytes = null)
 {
     public bool Succeeded => ResultCode is 2 or 3;
 }

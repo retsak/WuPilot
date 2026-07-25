@@ -4,14 +4,16 @@ param(
     [string] $Platform = 'x64',
 
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string] $Version = '0.1.0',
+    [string] $Version = '0.2.0',
 
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Release',
 
     [switch] $SkipAppBuild,
 
-    [string] $InnoCompilerPath
+    [string] $InnoCompilerPath,
+
+    [string] $PublishDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,7 +26,15 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $installerScript = Join-Path $repoRoot 'installer/WuPilot.iss'
 $innoArchitecture = if ($Platform -eq 'ARM64') { 'arm64' } else { 'x64' }
 $runtime = if ($Platform -eq 'ARM64') { 'win-arm64' } else { 'win-x64' }
-$publishDirectory = Join-Path $repoRoot "artifacts/WuPilot-$runtime"
+$publishDirectory = if ([string]::IsNullOrWhiteSpace($PublishDirectory)) {
+    Join-Path $repoRoot "artifacts/WuPilot-$runtime"
+} else {
+    [IO.Path]::GetFullPath($(if ([IO.Path]::IsPathRooted($PublishDirectory)) {
+        $PublishDirectory
+    } else {
+        Join-Path $repoRoot $PublishDirectory
+    }))
+}
 $installerDirectory = Join-Path $repoRoot 'artifacts/installer'
 $installerPath = Join-Path $installerDirectory "WuPilot-$Version-win-$innoArchitecture-setup.exe"
 
@@ -67,7 +77,7 @@ if ($null -eq $compiler) {
 }
 
 New-Item -ItemType Directory -Path $installerDirectory -Force | Out-Null
-& $compiler "/DAppVersion=$Version" "/DAppArch=$innoArchitecture" $installerScript
+& $compiler "/DAppVersion=$Version" "/DAppArch=$innoArchitecture" "/DAppSourceDir=$publishDirectory" $installerScript
 if ($LASTEXITCODE -ne 0) {
     throw 'Inno Setup compilation failed.'
 }

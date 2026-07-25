@@ -24,6 +24,9 @@ The application uses the supported Windows Update Agent (WUA) COM API. Microsoft
 - Correlate an offered driver to the currently installed signed PnP driver using exact/family hardware identifiers, including current version/date, INF, signer, and match confidence.
 - Track selected updates in a persistent watchlist and see whether each one is still offered after a later scan.
 - Browse and filter up to 500 local Windows Update history events, including failures and HRESULT values.
+- Inspect and change more than 45 Windows Update and Delivery Optimization settings through an audited policy workbench with build gating, requested/effective state, transactional rollback, and MDM-aware ownership.
+- Review Delivery Optimization CDN, cache, peer, upload, and mode statistics alongside retained WuPilot download/install timings and clearly labeled Windows event estimates.
+- Check stable GitHub releases from the installed app, verify the architecture-specific installer against two SHA-256 sources, and start an in-place upgrade only after confirmation.
 - Inspect every registered WUA source and reuse its service GUID for a custom read-only scan without registering or changing services.
 - Download, install, hide, or show one revalidated update with a confirmation. WuPilot never restarts the device automatically.
 - Diagnose update services, registered WUA sources, Windows Update/MDM policy registry values, WinHTTP proxy, Microsoft content DNS, WUA version/history, BITS jobs, disk space, Entra join identity, and pending restart state.
@@ -41,12 +44,12 @@ Download the latest installer from [GitHub Releases](https://github.com/retsak/W
 
 Run the installer, accept the Windows elevation prompt, and start WuPilot from the Start Menu. The installer is self-contained: users do not need the .NET SDK, Windows App SDK, Visual Studio, or a source checkout.
 
-The installer supports in-place upgrades, uninstall through Windows Settings, automatic light/dark appearance, an optional desktop shortcut, and silent deployment. Until a trusted code-signing certificate is configured for the project, Windows may identify the publisher as unknown or display a SmartScreen warning. Release checksum files are provided for integrity verification.
+The installer supports in-place upgrades, uninstall through Windows Settings, automatic light/dark appearance, an optional desktop shortcut, and silent deployment. Its default **Automatically check for stable WuPilot updates** option enables a non-background daily check while WuPilot is open; About always offers a manual check. Until a trusted code-signing certificate is configured for the project, Windows may identify the publisher as unknown or display a SmartScreen warning. Release checksum files are provided for integrity verification.
 
 For unattended installation:
 
 ```powershell
-WuPilot-0.1.0-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+WuPilot-0.2.0-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 WuPilot requests administrator rights because some WUA methods, diagnostics, service controls, and repair tools require elevation.
@@ -65,7 +68,7 @@ cd WuPilot
 To build a distributable installer locally, install Inno Setup 7 and run:
 
 ```powershell
-./scripts/Build-WuPilotInstaller.ps1 -Platform x64 -Version 0.1.0
+./scripts/Build-WuPilotInstaller.ps1 -Platform x64 -Version 0.2.0
 ```
 
 Release and signing details are documented in [`docs/RELEASING.md`](docs/RELEASING.md).
@@ -87,6 +90,28 @@ Use **Save current** to keep a provider-and-criteria combination as a reusable s
 The **Registered sources** tab is a read-only inventory of WUA services already present on the device. Selecting a source can populate the custom service field for a later scan; it never calls WUA service-registration methods. **Update history** provides a searchable view of local install history, while **Watchlist** tracks whether chosen updates remain offered.
 
 For a control-by-control description of scanning, comparison, watchlists, diagnostics, history, exports, and single-update actions, see the [feature guide](docs/FEATURES.md).
+
+### Update controls and policy workbench
+
+Open **Update controls** to refresh current Windows Update and Delivery Optimization policy. Quick controls cover Microsoft product updates, continuous innovation, metered downloads, restart notifications, and pause/resume. The workbench exposes requested and effective values, ownership, Windows-build support, documented choices, and local editability.
+
+Every change requires confirmation. WuPilot snapshots the original registry value, applies and verifies the entire batch, and rolls back partial changes on failure. The durable audit can be exported or used to restore a prior value. MDM-only CSP settings are evidence-only; domain or MDM management can overwrite a permitted local request. Private Windows Settings mappings are explicitly identified and build-gated.
+
+![Audited Windows Update and Delivery Optimization policy workbench](docs/images/windows-validation-2026-07-25/update-controls.png)
+
+### Performance and Delivery Optimization
+
+**Performance** combines supported `Get-DeliveryOptimization*` telemetry with retained update-action timings. WuPilot-created action totals use a monotonic timer and are marked **Exact**. WindowsUpdateClient event pairs are marked **Low** confidence; missing event boundaries never produce an invented duration. For a WuPilot install that reports a required restart, a later launch can correlate normal shutdown and boot events and records the relationship as **Medium** confidence without installing a service or startup task.
+
+Operation metrics are retained for up to 365 days or 5,000 entries under `%LocalAppData%\WuPilot`. Delivery Optimization statistics cover HTTP/CDN, Connected Cache, LAN/internet peers, uploaded bytes, cache size, active work, mode, and bandwidth limits when the Windows module exposes them.
+
+![Delivery Optimization statistics and retained update performance](docs/images/windows-validation-2026-07-25/performance.png)
+
+### Application updates
+
+WuPilot checks `retsak/WuPilot` stable releases at most once every 24 hours while the app is running. It ignores drafts and prereleases, selects only the native x64 or ARM64 installer, and requires the downloaded SHA-256 to match both GitHub's asset digest and the release checksum sidecar. A signed installer must have a valid Authenticode status; an unsigned but hash-valid installer receives an additional warning. WuPilot never downloads or installs an update without confirmation.
+
+![About page with stable release update check](docs/images/windows-validation-2026-07-25/about-0.2.0.png)
 
 Use `-Platform ARM64` for native ARM64. The full release gate is documented in [`docs/WINDOWS-VALIDATION.md`](docs/WINDOWS-VALIDATION.md), and `scripts/Test-WuaReadOnly.ps1` provides a non-mutating WUA smoke test independent of the UI.
 

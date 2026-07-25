@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Security.Principal;
 using System.Runtime.CompilerServices;
+using Microsoft.Win32;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
@@ -14,6 +15,8 @@ using WuPilot.Core.Services;
 using WuPilot.Infrastructure.Windows.Diagnostics;
 using WuPilot.Infrastructure.Windows.Export;
 using WuPilot.Infrastructure.Windows.Profiles;
+using WuPilot.Infrastructure.Windows.Management;
+using WuPilot.Infrastructure.Windows.Updates;
 using WuPilot.Infrastructure.Windows.Wua;
 
 namespace WuPilot.App;
@@ -28,9 +31,15 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private readonly IWatchlistStore _watchlistStore;
     private readonly IEvidenceExportService _exportService;
     private readonly IScanProfileStore _profileStore;
+    private readonly IWindowsUpdateSettingsService _settingsService;
+    private readonly IDeliveryOptimizationService _deliveryOptimizationService;
+    private readonly IOperationMetricStore _metricStore;
+    private readonly IAppUpdateService _appUpdateService;
     private readonly List<UpdateListItem> _allUpdates = [];
     private readonly List<DiagnosticFindingItem> _allDiagnosticFindings = [];
     private readonly List<UpdateHistoryItem> _allUpdateHistory = [];
+    private readonly List<PolicyStateItem> _allPolicyStates = [];
+    private readonly List<OperationMetricItem> _allMetrics = [];
     private CancellationTokenSource? _operationCancellation;
     private ScanReport? _scanReport;
     private ScanReport? _previousScanReport;
@@ -55,6 +64,9 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     public ObservableCollection<WatchedUpdateItem> WatchedUpdates { get; } = [];
     public ObservableCollection<KeyValuePair<string, string?>> ServiceStates { get; } = [];
     public ObservableCollection<KeyValuePair<string, string?>> PolicyStates { get; } = [];
+    public ObservableCollection<PolicyStateItem> VisiblePolicies { get; } = [];
+    public ObservableCollection<SettingAuditItem> SettingsAudit { get; } = [];
+    public ObservableCollection<OperationMetricItem> VisibleMetrics { get; } = [];
     public ObservableCollection<UpdateHistoryItem> UpdateHistory { get; } = [];
     public ObservableCollection<UpdateHistoryItem> VisibleUpdateHistory { get; } = [];
     public ObservableCollection<string> ActivityItems { get; } = [];
@@ -96,6 +108,10 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         _diagnosticService = new WindowsDiagnosticService(identityProvider, historyProvider);
         _exportService = new EvidenceExportService();
         _profileStore = new JsonScanProfileStore();
+        _settingsService = new WindowsUpdateSettingsService();
+        _deliveryOptimizationService = new DeliveryOptimizationService();
+        _metricStore = new JsonOperationMetricStore();
+        _appUpdateService = new GitHubAppUpdateService();
 
         foreach (var provider in UpdateProviderDefinition.BuiltIn)
         {
@@ -140,6 +156,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         {
             await ReloadProfilesAsync();
             await ReloadWatchlistAsync();
+            _ = CheckForAppUpdateAsync(force: false);
         }
         catch (Exception exception)
         {
@@ -507,6 +524,11 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             var result = await _actionService.ExecuteAsync(new UpdateActionRequest(update, provider, action, AcceptEula: true), CreateProgress(), _operationCancellation.Token);
+            await _metricStore.SaveAsync(new OperationMetric(
+                Guid.NewGuid(), result.CompletedAt - result.TotalDuration, result.CompletedAt, action.ToString(),
+                update.UpdateId, update.RevisionNumber, update.Title, result.DownloadBytes, result.RevalidationDuration,
+                result.DownloadDuration, result.InstallDuration, result.TotalDuration, result.ResultCode, result.HResult,
+                result.RebootRequired), CancellationToken.None);
             Log($"{action} {update.UpdateId}.{update.RevisionNumber}: result {result.ResultCode}, HRESULT 0x{unchecked((uint)result.HResult):X8}, reboot={result.RebootRequired}. {result.Message}");
             await ShowMessageAsync(result.Succeeded ? $"{action} completed" : $"{action} failed", $"{result.Message}\n\nResult: {result.ResultCode}\nHRESULT: 0x{unchecked((uint)result.HResult):X8}\nRestart required: {result.RebootRequired}\n\nRe-scan to refresh applicability and state.");
         }
@@ -1012,7 +1034,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        if (ScanView is null || CompareView is null || WatchlistView is null || SourcesView is null || DiagnosticsView is null || HistoryView is null || ActivityView is null || AboutView is null) return;
+        if (ScanView is null || CompareView is null || WatchlistView is null || SourcesView is null || ControlsView is null || PerformanceView is null || DiagnosticsView is null || HistoryView is null || ActivityView is null || AboutView is null) return;
 
         var tag = args.SelectedItemContainer?.Tag as string ?? "scan";
         ShowView(tag);
@@ -1025,9 +1047,13 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         WatchlistView.Visibility = tag == "watchlist" ? Visibility.Visible : Visibility.Collapsed;
         SourcesView.Visibility = tag == "sources" ? Visibility.Visible : Visibility.Collapsed;
         DiagnosticsView.Visibility = tag == "diagnostics" ? Visibility.Visible : Visibility.Collapsed;
+        ControlsView.Visibility = tag == "controls" ? Visibility.Visible : Visibility.Collapsed;
+        PerformanceView.Visibility = tag == "performance" ? Visibility.Visible : Visibility.Collapsed;
         HistoryView.Visibility = tag == "history" ? Visibility.Visible : Visibility.Collapsed;
         ActivityView.Visibility = tag == "activity" ? Visibility.Visible : Visibility.Collapsed;
         AboutView.Visibility = tag == "about" ? Visibility.Visible : Visibility.Collapsed;
+        if (tag == "controls" && _allPolicyStates.Count == 0) _ = RefreshSettingsAsync();
+        if (tag == "performance") _ = RefreshPerformanceAsync();
     }
 
     private void UpdateScanInsights(ScanReport report)
@@ -1129,6 +1155,215 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
         uri = null!;
         return false;
+    }
+
+    private async void RefreshSettings_Click(object sender, RoutedEventArgs e) => await RefreshSettingsAsync();
+
+    private async Task RefreshSettingsAsync()
+    {
+        try
+        {
+            var snapshot = await _settingsService.GetSnapshotAsync(CancellationToken.None);
+            _allPolicyStates.Clear();
+            _allPolicyStates.AddRange(snapshot.Policies.Select(static state => new PolicyStateItem(state)));
+            var audit = await _settingsService.GetAuditAsync(CancellationToken.None);
+            Replace(SettingsAudit, audit.Take(25).Select(static entry => new SettingAuditItem(entry)));
+            ApplyPolicyFilter();
+            ControlsSummaryText.Text = $"{snapshot.Policies.Count} policies · Windows build {snapshot.WindowsBuild} · {snapshot.Policies.Count(static policy => policy.CanEdit)} locally editable";
+        }
+        catch (Exception exception)
+        {
+            ControlsSummaryText.Text = $"Settings unavailable: {exception.Message}";
+            Log($"Settings refresh failed: {exception.Message}");
+        }
+    }
+
+    private void PolicyFilter_Changed(object sender, RoutedEventArgs e) => ApplyPolicyFilter();
+    private void PolicyFilter_Changed(object sender, TextChangedEventArgs e) => ApplyPolicyFilter();
+
+    private void ApplyPolicyFilter()
+    {
+        var query = PolicyFilterBox.Text?.Trim();
+        var showLegacy = ShowLegacyPolicyCheck.IsChecked == true;
+        var filtered = _allPolicyStates.Where(item =>
+            (showLegacy || item.State.IsSupported && !item.State.Definition.IsLegacy) &&
+            (string.IsNullOrWhiteSpace(query) ||
+             item.DisplayName.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
+             item.Category.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
+             item.ValueLabel.Contains(query, StringComparison.CurrentCultureIgnoreCase)));
+        Replace(VisiblePolicies, filtered.OrderBy(static item => item.Category).ThenBy(static item => item.DisplayName));
+        VisiblePolicyCountText.Text = $"{VisiblePolicies.Count} shown";
+    }
+
+    private void PolicyList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (PolicyList.SelectedItem is not PolicyStateItem item)
+        {
+            ApplyPolicyButton.IsEnabled = ClearPolicyButton.IsEnabled = false;
+            return;
+        }
+        PolicyDetailTitle.Text = item.DisplayName;
+        PolicyDetailStatus.Text = $"{item.Description}\n\nCurrent: {item.ValueLabel}\nOwner: {item.OwnershipLabel}\n{item.Status}";
+        PolicyValueBox.Text = item.State.RequestedValue ?? string.Empty;
+        PolicyValueBox.PlaceholderText = item.State.Definition.Choices is null
+            ? "Enter the documented value"
+            : string.Join(" · ", item.State.Definition.Choices.Select(static pair => $"{pair.Key}={pair.Value}"));
+        ApplyPolicyButton.IsEnabled = ClearPolicyButton.IsEnabled = item.State.CanEdit;
+    }
+
+    private async void ApplyPolicy_Click(object sender, RoutedEventArgs e)
+    {
+        if (PolicyList.SelectedItem is not PolicyStateItem item) return;
+        await ApplySettingChangesAsync([new(item.State.Definition.Id, PolicyValueBox.Text)], item.State.Definition.Risk);
+    }
+
+    private async void ClearPolicy_Click(object sender, RoutedEventArgs e)
+    {
+        if (PolicyList.SelectedItem is not PolicyStateItem item) return;
+        await ApplySettingChangesAsync([new(item.State.Definition.Id, null, Remove: true)], item.State.Definition.Risk);
+    }
+
+    private async void QuickToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string id }) return;
+        var state = _allPolicyStates.FirstOrDefault(item => item.State.Definition.Id == id);
+        if (state is null || !state.State.CanEdit)
+        {
+            await ShowMessageAsync("Control unavailable", state?.Status ?? "Refresh settings before using quick controls.");
+            return;
+        }
+        await ApplySettingChangesAsync([new(id, state.State.EffectiveValue == "1" ? "0" : "1")], state.State.Definition.Risk);
+    }
+
+    private async void PauseUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        var today = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        await ApplySettingChangesAsync([new("update.pause-quality-start", today), new("update.pause-feature-start", today)], PolicyRisk.Elevated);
+    }
+
+    private async void ResumeUpdates_Click(object sender, RoutedEventArgs e) =>
+        await ApplySettingChangesAsync([new("update.pause-quality-start", null, true), new("update.pause-feature-start", null, true)], PolicyRisk.Elevated);
+
+    private async Task ApplySettingChangesAsync(IReadOnlyList<SettingChange> changes, PolicyRisk risk)
+    {
+        var warning = risk == PolicyRisk.High
+            ? "This can change update sources, safeguards, or user access. A bad value can prevent updates."
+            : "This writes elevated device-local Windows Update policy or Settings state. Domain or MDM policy may overwrite it.";
+        if (!await ConfirmAsync("Apply Windows Update setting?", $"{warning}\n\nWuPilot will journal the previous value, verify readback, and roll back the batch if any write fails.")) return;
+        SetBusy(true, "Applying and verifying settings…");
+        try
+        {
+            var result = await _settingsService.ApplyAsync(changes, CancellationToken.None);
+            Log($"Settings batch {result.BatchId}: {result.Summary}");
+            await RefreshSettingsAsync();
+            await ShowMessageAsync(result.Succeeded ? "Settings applied" : "Settings rolled back", result.Summary);
+        }
+        catch (Exception exception) { await ShowMessageAsync("Settings change failed", exception.Message); }
+        finally { SetBusy(false, "Ready"); }
+    }
+
+    private async void ExportSettingsAudit_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var path = await _settingsService.ExportAuditAsync(CancellationToken.None);
+            Log($"Settings audit exported: {path}");
+            await ShowMessageAsync("Audit exported", path);
+        }
+        catch (Exception exception) { await ShowMessageAsync("Audit export failed", exception.Message); }
+    }
+
+    private async void RestoreSetting_Click(object sender, RoutedEventArgs e)
+    {
+        if (SettingsAuditList.SelectedItem is not SettingAuditItem selected) return;
+        if (!await ConfirmAsync("Restore previous value?", $"{selected.Title}\n\nWuPilot will refuse restoration if the setting drifted after this change.")) return;
+        try
+        {
+            var result = await _settingsService.RestoreAsync(selected.Entry.Id, allowConflict: false, CancellationToken.None);
+            Log($"Restored setting from audit {selected.Entry.Id}: {result.Summary}");
+            await RefreshSettingsAsync();
+        }
+        catch (Exception exception) { await ShowMessageAsync("Restore stopped", exception.Message); }
+    }
+
+    private async void RefreshPerformance_Click(object sender, RoutedEventArgs e) => await RefreshPerformanceAsync();
+    private async void PerformanceRange_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_profilesLoaded) return;
+        await RefreshPerformanceAsync();
+    }
+
+    private async Task RefreshPerformanceAsync()
+    {
+        try
+        {
+            var telemetryTask = _deliveryOptimizationService.GetSnapshotAsync(CancellationToken.None);
+            var metricsTask = _metricStore.GetAllAsync(CancellationToken.None);
+            await Task.WhenAll(telemetryTask, metricsTask);
+            var telemetry = await telemetryTask;
+            DoDownloadedText.Text = FormatBytes(telemetry.TotalDownloaded);
+            DoSavingsText.Text = $"{telemetry.PeerSavingsPercent:0.#}%";
+            DoUploadedText.Text = FormatBytes(telemetry.BytesUploaded);
+            DoModeText.Text = $"{telemetry.DownloadMode} · {telemetry.ActiveDownloads} active";
+            DoDetailText.Text = telemetry.Error is null
+                ? $"HTTP/CDN: {FormatBytes(telemetry.BytesFromHttp)}\nConnected Cache: {FormatBytes(telemetry.BytesFromCache)}\nLAN peers: {FormatBytes(telemetry.BytesFromLanPeers)}\nInternet peers: {FormatBytes(telemetry.BytesFromInternetPeers)}\nCache: {FormatBytes(telemetry.CacheBytes)}\nForeground/background limits: {telemetry.ForegroundLimit ?? "default"} / {telemetry.BackgroundLimit ?? "default"}\nSource: {telemetry.Source}"
+                : $"Telemetry unavailable: {telemetry.Error}";
+            var days = PerformanceRangeCombo.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out var parsed) ? parsed : 30;
+            _allMetrics.Clear();
+            _allMetrics.AddRange((await metricsTask).Select(static metric => new OperationMetricItem(metric)));
+            var visible = days == 0 ? _allMetrics : _allMetrics.Where(item => item.Metric.CompletedAt >= DateTimeOffset.Now.AddDays(-days));
+            Replace(VisibleMetrics, visible);
+            PerformanceSummaryText.Text = $"{VisibleMetrics.Count} retained WuPilot operations · exact monotonic total timing";
+        }
+        catch (Exception exception) { PerformanceSummaryText.Text = $"Performance data unavailable: {exception.Message}"; }
+    }
+
+    private async void CheckForUpdates_Click(object sender, RoutedEventArgs e) => await CheckForAppUpdateAsync(force: true);
+
+    private async Task CheckForAppUpdateAsync(bool force)
+    {
+        try
+        {
+            if (!force && !AutomaticUpdatesEnabled()) return;
+            var current = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+            var release = await _appUpdateService.CheckAsync(current, force, CancellationToken.None);
+            if (release is null)
+            {
+                if (force) await ShowMessageAsync("WuPilot is up to date", $"Installed version: {current.ToString(3)}");
+                AppUpdateStatusText.Text = $"No newer stable release was found. Installed: {current.ToString(3)}";
+                return;
+            }
+            AppUpdateStatusText.Text = $"{release.Name} is available.";
+            if (!await ConfirmAsync("WuPilot update available", $"{release.Name}\nPublished {release.PublishedAt:g}\n{release.Size / 1024d / 1024d:0.0} MB\n\n{release.Notes}\n\nDownload and verify the {RuntimeArchitectureLabel()} installer?")) return;
+            SetBusy(true, "Downloading WuPilot update…");
+            var downloaded = await _appUpdateService.DownloadAsync(release, CreateProgress(), CancellationToken.None);
+            var signatureWarning = downloaded.IsAuthenticodeSigned
+                ? "The Authenticode signature is valid."
+                : "This release is not Authenticode-signed. Its GitHub and sidecar SHA-256 digests match, but Windows may show an unknown-publisher warning.";
+            if (!await ConfirmAsync("Install verified update?", $"SHA-256: {downloaded.Sha256}\n\n{signatureWarning}\n\nWuPilot will close and launch the installer.")) return;
+            _appUpdateService.LaunchInstaller(downloaded);
+            Close();
+        }
+        catch (Exception exception)
+        {
+            AppUpdateStatusText.Text = $"Update check failed: {exception.Message}";
+            if (force) await ShowMessageAsync("Update check failed", exception.Message);
+            Log($"App update check failed: {exception.Message}");
+        }
+        finally { if (_isBusy) SetBusy(false, "Ready"); }
+    }
+
+    private static bool AutomaticUpdatesEnabled()
+    {
+        using var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\WuPilot");
+        return Convert.ToInt32(key?.GetValue("AutomaticUpdateChecks", 1), System.Globalization.CultureInfo.InvariantCulture) != 0;
+    }
+    private static string RuntimeArchitectureLabel() => System.Runtime.InteropServices.RuntimeInformation.OSArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "ARM64" : "x64";
+
+    private async Task<bool> ConfirmAsync(string title, string message)
+    {
+        var dialog = new ContentDialog { XamlRoot = RootGrid.XamlRoot, Title = title, Content = message, PrimaryButtonText = "Continue", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
     }
 
     private Progress<OperationProgress> CreateProgress() => new(progress =>

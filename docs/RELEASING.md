@@ -12,10 +12,12 @@ Each release contains:
 
 The installers use a stable application ID, so a newer release upgrades an existing installation in place. They install WuPilot under the 64-bit Program Files directory, create a Start Menu shortcut, offer an optional desktop shortcut, register an uninstaller, and can launch WuPilot after setup.
 
+Setup also offers an enabled-by-default automatic stable-release check. This writes `HKLM\SOFTWARE\WuPilot\AutomaticUpdateChecks`; it does not install a service or scheduled task. The application checks only while it is running and keeps manual checks available.
+
 The installer requests administrator access because WuPilot itself is elevation-first. It supports unattended deployment with the standard Inno Setup switches:
 
 ```powershell
-WuPilot-0.1.0-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+WuPilot-0.2.0-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 ## Create a release
@@ -25,13 +27,15 @@ WuPilot-0.1.0-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 3. Create and push an annotated tag:
 
    ```powershell
-   git tag -a v0.1.0 -m "WuPilot 0.1.0"
-   git push origin v0.1.0
+   git tag -a v0.2.0 -m "WuPilot 0.2.0"
+   git push origin v0.2.0
    ```
 
 4. Follow the **Windows release** workflow in GitHub Actions.
 5. Download both installers from the resulting GitHub Release.
 6. Verify each checksum and perform the Windows validation matrix before announcing the release.
+
+For releases after `v0.2.0`, install the prior updater-capable public release and exercise **About > Check for updates**. For the first updater release, use a lower-version test build to exercise discovery and download, and separately validate a manual in-place upgrade from public `v0.1.0`. Confirm native architecture selection, two-source SHA-256 validation, unsigned/signed publisher messaging, clean app shutdown, and in-place installer replacement.
 
 The workflow rejects tags that do not exactly match `vMAJOR.MINOR.PATCH`. The tag version is passed into the application assembly and installer metadata, so no source file needs a manual version edit for a release.
 
@@ -66,8 +70,8 @@ The PFX is written only to the temporary GitHub-hosted runner and is not uploade
 Install Inno Setup 7, then run:
 
 ```powershell
-./scripts/Build-WuPilotInstaller.ps1 -Platform x64 -Version 0.1.0
-./scripts/Build-WuPilotInstaller.ps1 -Platform ARM64 -Version 0.1.0
+./scripts/Build-WuPilotInstaller.ps1 -Platform x64 -Version 0.2.0
+./scripts/Build-WuPilotInstaller.ps1 -Platform ARM64 -Version 0.2.0
 ```
 
 Use `-InnoCompilerPath` when `ISCC.exe` is not in a standard installation path. Use `-SkipAppBuild` only when the matching self-contained publish directory already exists and has been verified.

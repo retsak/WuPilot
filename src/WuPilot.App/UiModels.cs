@@ -199,3 +199,34 @@ public sealed class WatchedUpdateItem(WatchedUpdate update)
         : "Software update";
     public string CheckedLabel => $"Last checked {Update.LastCheckedAt:g}";
 }
+
+public sealed class PolicyStateItem(PolicyState state)
+{
+    public PolicyState State { get; } = state;
+    public string DisplayName => State.Definition.DisplayName;
+    public string Category => State.Definition.Category;
+    public string Description => State.Definition.Description;
+    public string ValueLabel => State.EffectiveValue is null ? "Windows default" :
+        State.Definition.Choices?.GetValueOrDefault(State.EffectiveValue) ?? State.EffectiveValue;
+    public string OwnershipLabel => State.Ownership.ToString();
+    public string Status => State.Status;
+    public string EditLabel => State.CanEdit ? "Editable" : "View only";
+}
+
+public sealed class SettingAuditItem(SettingAuditEntry entry)
+{
+    public SettingAuditEntry Entry { get; } = entry;
+    public string Title => Entry.DisplayName;
+    public string Summary => $"{Entry.ChangedAt:g} · {Entry.BeforeValue ?? "default"} → {Entry.AfterValue ?? "default"} · {(Entry.Succeeded ? "verified" : "failed")}";
+}
+
+public sealed class OperationMetricItem
+{
+    public OperationMetricItem(OperationMetric metric) => Metric = metric;
+    public OperationMetric Metric { get; }
+    public string Title => Metric.Title ?? Metric.Operation;
+    public string When => Metric.CompletedAt.ToString("g");
+    public string Result => Metric.ResultCode is 2 or 3 ? "Succeeded" : $"Failed · 0x{unchecked((uint)Metric.HResult):X8}";
+    public string Timing => $"Total {Format(Metric.TotalDuration)} · download {Format(Metric.DownloadDuration)} · install {Format(Metric.InstallDuration)} · {Metric.TimingConfidence}";
+    private static string Format(TimeSpan value) => value == default ? "n/a" : value.TotalMinutes >= 1 ? $"{value.TotalMinutes:0.0} min" : $"{value.TotalSeconds:0.0} sec";
+}

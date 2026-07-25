@@ -49,6 +49,9 @@ public sealed class EvidenceExportService(string? exportRoot = null) : IEvidence
         }
 
         await File.WriteAllTextAsync(Path.Combine(directory, "driver-review.csv"), BuildCsv(report.Device.ComputerName, updates.Where(static update => update.IsDriver)), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true), cancellationToken).ConfigureAwait(false);
+        var localData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WuPilot");
+        await CopyOptionalAsync(Path.Combine(localData, "settings-audit.json"), Path.Combine(directory, "settings-audit.json"), cancellationToken).ConfigureAwait(false);
+        await CopyOptionalAsync(Path.Combine(localData, "operation-metrics.json"), Path.Combine(directory, "operation-metrics.json"), cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(directory, "intune-review.html"), BuildHtml(report, diagnostics, updates), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(directory, "README.txt"), BuildReadme(report, updates), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         return directory;
@@ -61,6 +64,14 @@ public sealed class EvidenceExportService(string? exportRoot = null) : IEvidence
         diagnostics.RawEvidence.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
             ? File.WriteAllTextAsync(path, value, Encoding.UTF8, cancellationToken)
             : Task.CompletedTask;
+
+    private static async Task CopyOptionalAsync(string source, string destination, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(source)) return;
+        await using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        await using var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None);
+        await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+    }
 
     private static string BuildCsv(string deviceName, IEnumerable<UpdateRecord> updates)
     {

@@ -57,3 +57,30 @@ public interface IWatchlistStore
     Task SaveAllAsync(IEnumerable<WatchedUpdate> updates, CancellationToken cancellationToken);
     Task DeleteAsync(string updateId, CancellationToken cancellationToken);
 }
+
+public interface IWindowsUpdateSettingsService
+{
+    Task<SettingsSnapshot> GetSnapshotAsync(CancellationToken cancellationToken);
+    Task<SettingChangeResult> ApplyAsync(IEnumerable<SettingChange> changes, CancellationToken cancellationToken);
+    Task<SettingChangeResult> RestoreAsync(Guid auditEntryId, bool allowConflict, CancellationToken cancellationToken);
+    Task<IReadOnlyList<SettingAuditEntry>> GetAuditAsync(CancellationToken cancellationToken);
+    Task<string> ExportAuditAsync(CancellationToken cancellationToken);
+}
+
+public interface IDeliveryOptimizationService
+{
+    Task<DeliveryOptimizationSnapshot> GetSnapshotAsync(CancellationToken cancellationToken);
+}
+
+public interface IOperationMetricStore
+{
+    Task<IReadOnlyList<OperationMetric>> GetAllAsync(CancellationToken cancellationToken);
+    Task SaveAsync(OperationMetric metric, CancellationToken cancellationToken);
+}
+
+public interface IAppUpdateService
+{
+    Task<AppReleaseInfo?> CheckAsync(Version currentVersion, bool force, CancellationToken cancellationToken);
+    Task<DownloadedAppUpdate> DownloadAsync(AppReleaseInfo release, IProgress<OperationProgress>? progress, CancellationToken cancellationToken);
+    void LaunchInstaller(DownloadedAppUpdate update);
+}

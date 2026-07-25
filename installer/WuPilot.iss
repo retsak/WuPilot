@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.2.0"
 #endif
 
 #ifndef AppArch
@@ -7,10 +7,14 @@
 #endif
 
 #if AppArch == "x64"
-  #define AppSourceDir "..\artifacts\WuPilot-win-x64"
+  #ifndef AppSourceDir
+    #define AppSourceDir "..\artifacts\WuPilot-win-x64"
+  #endif
   #define ArchitectureDisplayName "x64"
 #elif AppArch == "arm64"
-  #define AppSourceDir "..\artifacts\WuPilot-win-arm64"
+  #ifndef AppSourceDir
+    #define AppSourceDir "..\artifacts\WuPilot-win-arm64"
+  #endif
   #define ArchitectureDisplayName "ARM64"
 #else
   #error Unsupported AppArch. Use x64 or arm64.
@@ -68,6 +72,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "autoupdates"; Description: "Automatically check for stable WuPilot updates"; GroupDescription: "Update preferences:"; Flags: checkedonce
 
 [Files]
 Source: "{#AppSourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -75,6 +80,10 @@ Source: "{#AppSourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdi
 [Icons]
 Name: "{autoprograms}\WuPilot"; Filename: "{app}\WuPilot.exe"; WorkingDir: "{app}"
 Name: "{autodesktop}\WuPilot"; Filename: "{app}\WuPilot.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+
+[Registry]
+Root: HKLM; Subkey: "SOFTWARE\WuPilot"; ValueType: dword; ValueName: "AutomaticUpdateChecks"; ValueData: "1"; Tasks: autoupdates; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SOFTWARE\WuPilot"; ValueType: dword; ValueName: "AutomaticUpdateChecks"; ValueData: "0"; Tasks: not autoupdates; Flags: uninsdeletekey
 
 [Run]
 Filename: "{app}\WuPilot.exe"; Description: "{cm:LaunchProgram,WuPilot}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent shellexec

@@ -178,6 +178,34 @@ The dedicated **Update history** page loads up to 500 recent local WUA history r
 
 Each row includes date, operation, result, HRESULT, UpdateID, and source/client context. **Copy visible** copies only the currently filtered records. Reading history does not alter it.
 
+## Update controls
+
+The **Update controls** page is an elevated, device-local policy workbench. It reads more than 45 generally available Windows Update and Delivery Optimization controls, including offerings, driver inclusion, feature and quality deferrals, target release, WSUS and scan sources, automatic-update schedules, active hours, deadlines, notifications, peer selection, bandwidth, cache, upload, and Connected Cache configuration.
+
+Each row distinguishes:
+
+- the requested local value from the effective value;
+- Windows default, local/Group Policy, MDM, private Windows UX, or runtime ownership;
+- whether the current Windows build supports the setting;
+- whether a supported local write path exists; and
+- normal, elevated, or high-risk changes.
+
+Quick controls mirror commonly used Windows Settings choices. Private UX values are labeled and available only on known Windows builds. MDM-only CSP values are read/export only because an elevated desktop app is not an MDM enrollment provider.
+
+An apply operation validates the complete batch, records original value types and existence, writes each value, and verifies readback. Any failure restores all values already written by that batch. The durable audit contains OS build, user SID, before/after/verified values, ownership, and outcome. Restoration refuses to overwrite later drift unless conflict restoration is explicitly requested.
+
+## Performance analytics
+
+The **Performance** page shows supported Delivery Optimization performance snapshots and up to 365 days or 5,000 retained WuPilot action records. Available Delivery Optimization evidence includes HTTP/CDN, Connected Cache, LAN and internet peer bytes, uploaded bytes, cache size, mode, active downloads, peer savings, and foreground/background limits.
+
+WuPilot download and install actions record an exact monotonic total duration, result, HRESULT, update identity, known bytes, and restart requirement. WindowsUpdateClient operational-event pairs can supplement the list when a matching start and completion boundary exists; those durations are labeled estimated with low confidence and their event-log source. Missing boundaries remain unavailable.
+
+When a WuPilot action requires a restart, the pending record survives app closure. A later launch can match normal Kernel-General shutdown and boot events after the action, recording restart wait and downtime evidence with medium confidence. WuPilot does not install a background service, start automatically, or restart the computer.
+
+## WuPilot updates
+
+Automatic stable-release checks run at most daily while WuPilot is open when enabled by the installer. **About > Check for updates** always forces a fresh check. WuPilot ignores draft/prerelease versions, selects the current architecture, downloads only from HTTPS GitHub release URLs, and verifies SHA-256 against both the GitHub digest and checksum asset. Authenticode signatures are required to be valid when present; unsigned releases require an additional confirmation.
+
 ## Evidence export
 
 An export can include the full scan or only explicitly selected updates. Technician notes are carried into the review bundle so ticket context stays with the technical evidence.
