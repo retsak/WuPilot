@@ -62,6 +62,6 @@ public sealed class DriverEvidenceCorrelatorTests
 
     private static UpdateRecord Update(DriverMetadata driver) =>
         new("12345678-1234-1234-1234-1234567890ab", 1, "Contoso - System - 5.0.0.0", "Driver", UpdateKind.Driver,
-            ["driver-catalog"], ["Driver catalog"], "driver-catalog", [], [], ["Drivers"], [], null, 1, 2, false, false, false,
+            ["windows-update"], ["Windows Update"], "windows-update", [], [], ["Drivers"], [], null, 1, 2, false, false, false,
             false, false, true, false, false, false, null, null, null, 1, 1, 0, 1, false, driver);
 }

@@ -11,7 +11,7 @@ flowchart LR
     GATE --> WUA["WUA COM adapter"]
     WUA --> DEF["Policy default / WSUS"]
     WUA --> WU["Windows Update / Microsoft Update"]
-    WUA --> DCAT["Driver catalog / custom service"]
+    WUA --> OTHER["Microsoft Update / Store / custom service"]
     WUA --> OFFLINE["Signed offline security catalog"]
     WUA --> PNP["Installed signed PnP inventory"]
     CORE --> DIAG["Read-only diagnostics"]
@@ -58,8 +58,7 @@ WUA’s synchronous `Search`, `Download`, and `Install` calls run away from the 
 | Managed WSUS | 1 | — |
 | Windows Update | 2 | — |
 | Microsoft Update | 3 | `7971f918-a847-4430-9279-4a52d1efe18d` |
-| Driver catalog | 3 | `855e8a7c-ecb4-4ca3-b045-1dfa50104289` |
-| Store | 3 | `117cab2d-82b1-4b5a-a08c-4d62dbee7782` |
+| Store | 3 | `855e8a7c-ecb4-4ca3-b045-1dfa50104289` |
 | Offline security catalog | 3 | Volatile ID returned by `AddScanPackageService` |
 
 A service can be unavailable or prohibited on a particular machine. That failure is retained beside successful provider results rather than discarding the full scan.

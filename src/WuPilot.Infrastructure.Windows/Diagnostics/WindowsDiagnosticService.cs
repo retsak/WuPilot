@@ -201,7 +201,7 @@ public sealed class WindowsDiagnosticService(
         var noInternetKey = policies.FirstOrDefault(static pair => pair.Key.EndsWith("DoNotConnectToWindowsUpdateInternetLocations", StringComparison.OrdinalIgnoreCase));
         if (noInternetKey.Value == "1")
         {
-            findings.Add(new DiagnosticFinding("policy.no-internet-wu", "Public Microsoft update services are blocked by policy", DiagnosticSeverity.Warning, "Direct Windows Update, Microsoft Update, and driver catalog scans may fail by design.", noInternetKey.Value, "0 or not configured", "Confirm intended policy with the Intune or Group Policy owner before changing it."));
+            findings.Add(new DiagnosticFinding("policy.no-internet-wu", "Public Microsoft update services are blocked by policy", DiagnosticSeverity.Warning, "Direct Windows Update, Microsoft Update, and Store scans may fail by design.", noInternetKey.Value, "0 or not configured", "Confirm intended policy with the Intune or Group Policy owner before changing it."));
         }
 
         var useWsusKey = policies.FirstOrDefault(static pair => pair.Key.EndsWith("AU\\UseWUServer", StringComparison.OrdinalIgnoreCase));

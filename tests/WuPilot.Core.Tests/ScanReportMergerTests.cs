@@ -9,7 +9,7 @@ public sealed class ScanReportMergerTests
     public void Merge_DeduplicatesIdentityAndPreservesSourcesAndEvidence()
     {
         var firstProvider = UpdateProviderDefinition.BuiltIn.Single(static provider => provider.Id == "default");
-        var secondProvider = UpdateProviderDefinition.BuiltIn.Single(static provider => provider.Id == "driver-catalog");
+        var secondProvider = UpdateProviderDefinition.BuiltIn.Single(static provider => provider.Id == "microsoft-update");
         var first = MakeUpdate(firstProvider, description: null, cves: ["CVE-2026-0001"]);
         var second = MakeUpdate(secondProvider, description: "Driver description", cves: ["CVE-2026-0002"]);
         var now = DateTimeOffset.Now;
@@ -20,7 +20,7 @@ public sealed class ScanReportMergerTests
         ]);
 
         var update = Assert.Single(merged);
-        Assert.Equal(["default", "driver-catalog"], update.ProviderIds);
+        Assert.Equal(["default", "microsoft-update"], update.ProviderIds);
         Assert.Equal("Driver description", update.Description);
         Assert.Equal(["CVE-2026-0001", "CVE-2026-0002"], update.CveIds);
     }

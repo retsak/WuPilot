@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Default', 'WSUS', 'WindowsUpdate', 'MicrosoftUpdate', 'DriverCatalog')]
+    [ValidateSet('Default', 'WSUS', 'WindowsUpdate', 'MicrosoftUpdate', 'Store')]
     [string] $Provider = 'Default',
 
     [string] $Criteria = "IsInstalled=0 and IsHidden=0 and Type='Driver'",
@@ -37,12 +37,37 @@ try {
         $searcher.ServiceID = $scanServiceId
     }
     else {
+        $serviceId = $null
         switch ($Provider) {
             'Default' { $searcher.ServerSelection = 0 }
             'WSUS' { $searcher.ServerSelection = 1 }
             'WindowsUpdate' { $searcher.ServerSelection = 2 }
-            'MicrosoftUpdate' { $searcher.ServerSelection = 3; $searcher.ServiceID = '7971f918-a847-4430-9279-4a52d1efe18d' }
-            'DriverCatalog' { $searcher.ServerSelection = 3; $searcher.ServiceID = '855e8a7c-ecb4-4ca3-b045-1dfa50104289' }
+            'MicrosoftUpdate' { $searcher.ServerSelection = 3; $serviceId = '7971f918-a847-4430-9279-4a52d1efe18d' }
+            'Store' { $searcher.ServerSelection = 3; $serviceId = '855e8a7c-ecb4-4ca3-b045-1dfa50104289' }
+        }
+
+        if ($serviceId) {
+            $searcher.ServiceID = $serviceId
+            $serviceManager = New-Object -ComObject Microsoft.Update.ServiceManager
+            $services = $serviceManager.Services
+            $registered = $false
+            for ($index = 0; $index -lt $services.Count; $index++) {
+                $service = $services.Item($index)
+                try {
+                    if ([string] $service.ServiceID -eq $serviceId) {
+                        $registered = $true
+                        break
+                    }
+                }
+                finally {
+                    if ($null -ne $service -and [Runtime.InteropServices.Marshal]::IsComObject($service)) {
+                        [void] [Runtime.InteropServices.Marshal]::FinalReleaseComObject($service)
+                    }
+                }
+            }
+            if (-not $registered) {
+                throw "$Provider is not registered with Windows Update Agent. This read-only test will not change service registration."
+            }
         }
     }
 
@@ -90,7 +115,7 @@ finally {
     if ($serviceManager -and $scanServiceId) {
         try { $serviceManager.RemoveService($scanServiceId) } catch { Write-Warning $_.Exception.Message }
     }
-    foreach ($item in @($scanService, $searcher, $session, $serviceManager)) {
+    foreach ($item in @($scanService, $services, $searcher, $session, $serviceManager)) {
         if ($null -ne $item -and [Runtime.InteropServices.Marshal]::IsComObject($item)) {
             [void] [Runtime.InteropServices.Marshal]::FinalReleaseComObject($item)
         }

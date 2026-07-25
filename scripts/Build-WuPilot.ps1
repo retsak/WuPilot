@@ -34,6 +34,21 @@ try {
     dotnet publish src/WuPilot.App/WuPilot.App.csproj --configuration $Configuration --no-restore -p:Platform=$Platform -r $runtime --self-contained true --output $output
     if ($LASTEXITCODE -ne 0) { throw 'WinUI publish failed.' }
 
+    $requiredPublishFiles = @(
+        'WuPilot.exe'
+        'WuPilot.pri'
+        'App.xbf'
+        'MainWindow.xbf'
+    )
+    $missingPublishFiles = @(
+        $requiredPublishFiles | Where-Object {
+            -not (Test-Path -LiteralPath (Join-Path $output $_) -PathType Leaf)
+        }
+    )
+    if ($missingPublishFiles.Count -gt 0) {
+        throw "WinUI publish output is incomplete. Missing: $($missingPublishFiles -join ', ')."
+    }
+
     Write-Host "WuPilot published to $output" -ForegroundColor Green
 }
 finally {

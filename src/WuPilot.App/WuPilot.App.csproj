@@ -16,6 +16,8 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <EnablePriGenTooling>true</EnablePriGenTooling>
+    <EnableCoreMrtTooling>true</EnableCoreMrtTooling>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
@@ -24,4 +26,11 @@
     <ProjectReference Include="../WuPilot.Core/WuPilot.Core.csproj" />
     <ProjectReference Include="../WuPilot.Infrastructure.Windows/WuPilot.Infrastructure.Windows.csproj" />
   </ItemGroup>
+  <Target Name="CopyApplicationPriToPublishOutput" AfterTargets="Publish">
+    <Copy
+      SourceFiles="$(TargetDir)$(ProjectPriFileName)"
+      DestinationFolder="$(PublishDir)"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(TargetDir)$(ProjectPriFileName)')" />
+  </Target>
 </Project>

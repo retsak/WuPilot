@@ -11,7 +11,6 @@ The application uses the supported Windows Update Agent (WUA) COM API. Microsoft
   - managed WSUS
   - public Windows Update
   - Microsoft Update
-  - Microsoft driver catalog
   - Microsoft Store service
   - a custom registered WUA service GUID
   - a Microsoft-signed offline `Wsusscn2.cab` security catalog
@@ -44,7 +43,7 @@ The full release gate is documented in `docs/WINDOWS-VALIDATION.md`; `scripts/Te
 
 1. Run diagnostics before changing anything. Save policy-related findings rather than immediately “fixing” intentional management settings.
 2. Scan **Policy default** first to capture the managed experience.
-3. For comparison, add **Windows Update**, **Microsoft Update**, or **Microsoft driver catalog**. A direct-source scan does not defeat policy, endpoint restrictions, or Microsoft applicability rules.
+3. For comparison, add **Windows Update**, **Microsoft Update**, or **Microsoft Store service**. Use the missing-driver preset with Windows Update to query applicable driver metadata. A direct-source scan does not defeat policy, endpoint restrictions, or Microsoft applicability rules.
 4. Inspect driver manufacturer, provider, model, class, hardware ID, date, inferred version, and source.
    Compare the installed driver match and confidence before concluding the offered package is an upgrade for the intended device.
 5. Optionally download or install on this single test device. Re-scan afterward.

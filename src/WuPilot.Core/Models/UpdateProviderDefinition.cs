@@ -21,10 +21,9 @@ public sealed record UpdateProviderDefinition(
     [
         new("default", "Policy default", "Uses the update source selected by local policy (managed WSUS, Microsoft Update, or Windows Update).", UpdateServerSelection.Default),
         new("wsus", "Managed WSUS", "Queries the intranet update service configured by policy.", UpdateServerSelection.ManagedServer),
-        new("windows-update", "Windows Update", "Queries the public Windows Update service directly.", UpdateServerSelection.WindowsUpdate, IsDirectMicrosoftSource: true),
+        new("windows-update", "Windows Update", "Queries the public Windows Update service directly, including applicable driver metadata when the driver preset is selected.", UpdateServerSelection.WindowsUpdate, IsDirectMicrosoftSource: true),
         new("microsoft-update", "Microsoft Update", "Includes updates for Windows and other Microsoft products.", UpdateServerSelection.Others, "7971f918-a847-4430-9279-4a52d1efe18d", true),
-        new("driver-catalog", "Microsoft driver catalog", "Queries the Windows Update driver catalog service used by WUA.", UpdateServerSelection.Others, "855E8A7C-ECB4-4CA3-B045-1DFA50104289", true),
-        new("store", "Microsoft Store service", "Queries the registered Store update service. Results depend on device registration.", UpdateServerSelection.Others, "117cab2d-82b1-4b5a-a08c-4d62dbee7782", true)
+        new("store", "Microsoft Store service", "Queries the registered Store update service. Results depend on device registration.", UpdateServerSelection.Others, "855E8A7C-ECB4-4CA3-B045-1DFA50104289", true)
     ];
 
     public static UpdateProviderDefinition Custom(string serviceId, string? name = null)
