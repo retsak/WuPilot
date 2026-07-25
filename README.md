@@ -23,9 +23,53 @@ The application uses the supported Windows Update Agent (WUA) COM API. Microsoft
 - Start required services, run DISM health operations, generate `WindowsUpdate.log`, or reset update caches. Cache reset renames existing stores to timestamped recovery paths rather than deleting them.
 - Export JSON, CSV, and a human-readable HTML review bundle plus Windows Update events, CBS errors, SetupAPI driver-install evidence, BITS state, and existing SetupDiag results.
 
-## Build and run
+## Quick start
 
-The WinUI XAML compiler and WUA are Windows-only. Build on Windows 10 1809 or newer with the .NET 10 SDK and the Windows application development tooling installed.
+WuPilot is Windows-only. Build it on Windows 10 1809 or newer with the .NET 10 SDK and Windows application development tooling installed.
+
+```powershell
+git clone https://github.com/retsak/WuPilot.git
+cd WuPilot
+./scripts/Build-WuPilot.ps1 -Platform x64 -Configuration Release
+./artifacts/WuPilot-win-x64/WuPilot.exe
+```
+
+Accept the Windows elevation prompt when the app starts. The published application is unpackaged and self-contained; administrator rights are requested because some WUA methods and repair tools require elevation.
+
+After launch:
+
+1. Leave **Policy default** selected for the first scan.
+2. Choose a search profile. **Missing drivers** is a useful starting point for driver troubleshooting.
+3. Select **Start scan**. Scanning is read-only and may take several minutes.
+4. Select an offered update to review its source, identity, applicability, driver match, signer, version, and date.
+5. Optionally export an evidence bundle for review.
+6. Use **Download** or **Install** only after reviewing the selected update. Each action requires a separate confirmation and defaults to **Cancel**; WuPilot never restarts the device automatically.
+
+To compare sources, select **Windows Update**, **Microsoft Update**, or **Microsoft Store service** and scan again. A source must already be registered with Windows Update Agent; WuPilot does not register services during a read-only scan.
+
+Use `-Platform ARM64` for native ARM64. The full release gate is documented in [`docs/WINDOWS-VALIDATION.md`](docs/WINDOWS-VALIDATION.md), and `scripts/Test-WuaReadOnly.ps1` provides a non-mutating WUA smoke test independent of the UI.
+
+### 1. Start with the safe defaults
+
+Policy default and the missing-driver profile are selected at startup. Download and Install remain unavailable until an applicable update is selected.
+
+![WuPilot startup screen with Policy default and Missing drivers selected](docs/images/windows-validation-2026-07-24/startup.png)
+
+### 2. Run and compare scans
+
+Select one or more registered sources, then choose **Start scan**. The results header summarizes updates, drivers, and source failures. This example completed a Microsoft Store service scan with no applicable updates.
+
+![Completed Microsoft Store service scan](docs/images/windows-validation-2026-07-24/store-scan.png)
+
+### 3. Review source-specific guidance
+
+Provider failures are retained alongside successful results. If Microsoft Update is not registered, WuPilot explains the condition and leaves registration unchanged instead of silently opting in the device.
+
+![Microsoft Update not registered read-only guidance](docs/images/windows-validation-2026-07-24/microsoft-update-unregistered.png)
+
+## Build and test
+
+For an iterative developer build:
 
 ```powershell
 dotnet restore WuPilot.slnx
@@ -34,10 +78,7 @@ dotnet build src/WuPilot.App/WuPilot.App.csproj -p:Platform=x64
 dotnet run --project src/WuPilot.App/WuPilot.App.csproj -p:Platform=x64
 ```
 
-Use `-p:Platform=ARM64` for native ARM64. The app is unpackaged and self-contained, and its manifest requests administrator rights because WUA secured methods and the repair tools require elevation.
-
-For a tested self-contained output, run `./scripts/Build-WuPilot.ps1 -Platform x64`; the result is written under `artifacts/`.
-The full release gate is documented in `docs/WINDOWS-VALIDATION.md`; `scripts/Test-WuaReadOnly.ps1` provides a non-mutating WUA smoke test independent of the UI.
+For a tested self-contained output, use the Quick start build script; the result is written under `artifacts/`.
 
 ## Technician workflow
 
