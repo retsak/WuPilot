@@ -8,6 +8,7 @@
     <Product>WuPilot Windows Update Workbench</Product>
     <Description>Technician-focused Windows Update Agent diagnostics and Intune driver evidence workbench.</Description>
     <Version>0.1.0</Version>
+    <ApplicationIcon>Assets\WuPilot.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x64;ARM64</Platforms>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
@@ -25,6 +26,12 @@
   <ItemGroup>
     <ProjectReference Include="../WuPilot.Core/WuPilot.Core.csproj" />
     <ProjectReference Include="../WuPilot.Infrastructure.Windows/WuPilot.Infrastructure.Windows.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Assets\WuPilot.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
   </ItemGroup>
   <Target Name="CopyWinUiResourcesToPublishOutput" AfterTargets="Publish">
     <Copy

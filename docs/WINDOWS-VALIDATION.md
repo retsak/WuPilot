@@ -48,6 +48,9 @@ The offline catalog contains security metadata only and is not a driver-source t
 - Hide/show changes local WUA visibility only and is corrected by a rescan.
 - Cache reset on a disposable VM creates timestamped recovery paths and restarts required services without deleting the old stores.
 - x64 and ARM64 publish outputs launch on their corresponding architecture.
+- The x64 and ARM64 installers display the expected version and architecture, install under Program Files, create the selected shortcuts, launch WuPilot through UAC, upgrade in place, and uninstall cleanly.
+- Silent installation with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` returns success and leaves WuPilot available from the Start Menu.
+- Release SHA-256 files match the downloadable installer assets, and Authenticode signatures validate when signing secrets are configured.
 
 ## Intune acceptance
 

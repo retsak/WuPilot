@@ -30,9 +30,30 @@ The application uses the supported Windows Update Agent (WUA) COM API. Microsoft
 - Start required services, run DISM health operations, generate `WindowsUpdate.log`, or reset update caches. Cache reset renames existing stores to timestamped recovery paths rather than deleting them.
 - Export one or several selected update records, technician notes, JSON, CSV, and a human-readable HTML review bundle plus Windows Update events, CBS errors, SetupAPI driver-install evidence, BITS state, and existing SetupDiag results.
 
-## Quick start
+## Install
 
-WuPilot is Windows-only. Build it on Windows 10 1809 or newer with the .NET 10 SDK and Windows application development tooling installed.
+WuPilot is Windows-only and supports Windows 10 version 1809 or newer.
+
+Download the latest installer from [GitHub Releases](https://github.com/retsak/WuPilot/releases):
+
+- choose `win-x64` for Intel and AMD 64-bit PCs;
+- choose `win-arm64` for Windows on Arm.
+
+Run the installer, accept the Windows elevation prompt, and start WuPilot from the Start Menu. The installer is self-contained: users do not need the .NET SDK, Windows App SDK, Visual Studio, or a source checkout.
+
+The installer supports in-place upgrades, uninstall through Windows Settings, automatic light/dark appearance, an optional desktop shortcut, and silent deployment. Until a trusted code-signing certificate is configured for the project, Windows may identify the publisher as unknown or display a SmartScreen warning. Release checksum files are provided for integrity verification.
+
+For unattended installation:
+
+```powershell
+WuPilot-0.1.0-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+```
+
+WuPilot requests administrator rights because some WUA methods, diagnostics, service controls, and repair tools require elevation.
+
+## Build from source
+
+Developers can build WuPilot on Windows with the .NET 10 SDK and Windows application development tooling installed.
 
 ```powershell
 git clone https://github.com/retsak/WuPilot.git
@@ -41,7 +62,13 @@ cd WuPilot
 ./artifacts/WuPilot-win-x64/WuPilot.exe
 ```
 
-Accept the Windows elevation prompt when the app starts. The published application is unpackaged and self-contained; administrator rights are requested because some WUA methods and repair tools require elevation.
+To build a distributable installer locally, install Inno Setup 7 and run:
+
+```powershell
+./scripts/Build-WuPilotInstaller.ps1 -Platform x64 -Version 0.1.0
+```
+
+Release and signing details are documented in [`docs/RELEASING.md`](docs/RELEASING.md).
 
 After launch:
 
@@ -136,7 +163,7 @@ dotnet build src/WuPilot.App/WuPilot.App.csproj -p:Platform=x64
 dotnet run --project src/WuPilot.App/WuPilot.App.csproj -p:Platform=x64
 ```
 
-For a tested self-contained output, use the Quick start build script; the result is written under `artifacts/`.
+For a tested self-contained output, use `scripts/Build-WuPilot.ps1`; the result is written under `artifacts/`. For a complete installer, use `scripts/Build-WuPilotInstaller.ps1`.
 
 ## Technician workflow
 
@@ -174,6 +201,7 @@ WUA UpdateID/revision values are excellent local trace identifiers, but they are
 - `tests/WuPilot.Infrastructure.Tests` — evidence-bundle integration coverage.
 - `tests/WuPilot.App.CodeChecks` — compiles the real WinUI code-behind against generated-field stubs when the native XAML compiler is unavailable.
 - `scripts` — Windows build and read-only WUA validation entry points.
+- `installer` — parameterized Inno Setup definition for x64 and ARM64 installers.
 - `docs` — architecture, Intune handoff, and troubleshooting notes.
 
 ## Microsoft references

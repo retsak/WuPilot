@@ -79,6 +79,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1440, 900));
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "WuPilot.ico"));
         _isAdministrator = new WindowsPrincipal(WindowsIdentity.GetCurrent())
             .IsInRole(WindowsBuiltInRole.Administrator);
         ElevationBadgeText.Text = _isAdministrator ? "Administrator" : "Standard user";

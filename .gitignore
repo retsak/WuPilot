@@ -12,3 +12,4 @@ artifacts/
 *.evtx
 .DS_Store
 .dotnet/
+.tools/

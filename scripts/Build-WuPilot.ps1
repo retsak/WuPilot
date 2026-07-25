@@ -4,7 +4,10 @@ param(
     [string] $Platform = 'x64',
 
     [ValidateSet('Debug', 'Release')]
-    [string] $Configuration = 'Release'
+    [string] $Configuration = 'Release',
+
+    [ValidatePattern('^\d+\.\d+\.\d+$')]
+    [string] $Version = '0.1.0'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,7 +34,7 @@ try {
     dotnet build tests/WuPilot.App.CodeChecks/WuPilot.App.CodeChecks.csproj --configuration $Configuration --no-restore
     if ($LASTEXITCODE -ne 0) { throw 'WinUI code-behind compilation gate failed.' }
 
-    dotnet publish src/WuPilot.App/WuPilot.App.csproj --configuration $Configuration --no-restore -p:Platform=$Platform -r $runtime --self-contained true --output $output
+    dotnet publish src/WuPilot.App/WuPilot.App.csproj --configuration $Configuration --no-restore -p:Platform=$Platform -p:Version=$Version -r $runtime --self-contained true --output $output
     if ($LASTEXITCODE -ne 0) { throw 'WinUI publish failed.' }
 
     $requiredPublishFiles = @(

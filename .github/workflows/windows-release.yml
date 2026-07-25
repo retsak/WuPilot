@@ -1,0 +1,241 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      INNO_SETUP_VERSION: 7.0.2
+      INNO_SETUP_SHA256: 5AD54CA3DEF786F8F4212552E54CC6D8D61329E2D24A1CFEE0571D42C2684FF1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve release version
+        shell: pwsh
+        run: |
+          if ('${{ github.ref_name }}' -notmatch '^v(?<version>\d+\.\d+\.\d+)$') {
+            throw 'Release tags must use the form vMAJOR.MINOR.PATCH.'
+          }
+          "RELEASE_VERSION=$($Matches.version)" >> $env:GITHUB_ENV
+
+      - name: Restore
+        run: dotnet restore WuPilot.slnx
+
+      - name: Test core
+        run: dotnet test tests/WuPilot.Core.Tests/WuPilot.Core.Tests.csproj --configuration Release --no-restore
+
+      - name: Test Windows infrastructure
+        run: dotnet test tests/WuPilot.Infrastructure.Tests/WuPilot.Infrastructure.Tests.csproj --configuration Release --no-restore
+
+      - name: Compile WinUI code-behind gate
+        run: dotnet build tests/WuPilot.App.CodeChecks/WuPilot.App.CodeChecks.csproj --configuration Release --no-restore
+
+      - name: Publish x64 app
+        shell: pwsh
+        run: >
+          dotnet publish src/WuPilot.App/WuPilot.App.csproj
+          --configuration Release
+          --no-restore
+          -p:Platform=x64
+          -p:Version=$env:RELEASE_VERSION
+          -r win-x64
+          --self-contained true
+          --output artifacts/WuPilot-win-x64
+
+      - name: Publish ARM64 app
+        shell: pwsh
+        run: >
+          dotnet publish src/WuPilot.App/WuPilot.App.csproj
+          --configuration Release
+          --no-restore
+          -p:Platform=ARM64
+          -p:Version=$env:RELEASE_VERSION
+          -r win-arm64
+          --self-contained true
+          --output artifacts/WuPilot-win-arm64
+
+      - name: Verify publish resources
+        shell: pwsh
+        run: |
+          $required = @('WuPilot.exe', 'WuPilot.pri', 'App.xbf', 'MainWindow.xbf')
+          foreach ($runtime in @('win-x64', 'win-arm64')) {
+            foreach ($file in $required) {
+              $path = "artifacts/WuPilot-$runtime/$file"
+              if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+                throw "Missing required publish resource: $path"
+              }
+            }
+          }
+
+      - name: Prepare optional code-signing certificate
+        id: signing
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64)) {
+            'enabled=false' >> $env:GITHUB_OUTPUT
+            'No signing certificate is configured; release executables will be unsigned.' >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'wupilot-signing.pfx'
+          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+          "WINDOWS_SIGNING_CERTIFICATE_PATH=$certificatePath" >> $env:GITHUB_ENV
+          'enabled=true' >> $env:GITHUB_OUTPUT
+
+      - name: Locate SignTool
+        if: steps.signing.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse |
+            Where-Object FullName -Match '\\x64\\signtool\.exe$' |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          if ([string]::IsNullOrWhiteSpace($signTool)) {
+            throw 'SignTool was not found on the Windows runner.'
+          }
+          "SIGNTOOL_PATH=$signTool" >> $env:GITHUB_ENV
+
+      - name: Sign application executables
+        if: steps.signing.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          foreach ($path in @(
+            'artifacts/WuPilot-win-x64/WuPilot.exe',
+            'artifacts/WuPilot-win-arm64/WuPilot.exe'
+          )) {
+            & $env:SIGNTOOL_PATH sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com `
+              /f $env:WINDOWS_SIGNING_CERTIFICATE_PATH /p $env:CERTIFICATE_PASSWORD $path
+            if ($LASTEXITCODE -ne 0) {
+              throw "Signing failed for $path."
+            }
+          }
+
+      - name: Install verified Inno Setup compiler
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "innosetup-$env:INNO_SETUP_VERSION-x64.exe"
+          $url = "https://github.com/jrsoftware/issrc/releases/download/is-7_0_2/innosetup-$env:INNO_SETUP_VERSION-x64.exe"
+          Invoke-WebRequest -Uri $url -OutFile $installer
+
+          $actualHash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
+          if ($actualHash -ne $env:INNO_SETUP_SHA256) {
+            throw "Inno Setup hash mismatch. Expected $env:INNO_SETUP_SHA256; received $actualHash."
+          }
+
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Pyrsys B\.V\.') {
+            throw 'Inno Setup Authenticode verification failed.'
+          }
+
+          $installDirectory = Join-Path $env:RUNNER_TEMP 'inno'
+          $process = Start-Process -FilePath $installer `
+            -ArgumentList '/CURRENTUSER', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$installDirectory" `
+            -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Inno Setup installation failed with exit code $($process.ExitCode)."
+          }
+          "INNO_SETUP_COMPILER=$installDirectory/ISCC.exe" >> $env:GITHUB_ENV
+
+      - name: Build x64 installer
+        shell: pwsh
+        run: >
+          ./scripts/Build-WuPilotInstaller.ps1
+          -Platform x64
+          -Version $env:RELEASE_VERSION
+          -SkipAppBuild
+          -InnoCompilerPath $env:INNO_SETUP_COMPILER
+
+      - name: Build ARM64 installer
+        shell: pwsh
+        run: >
+          ./scripts/Build-WuPilotInstaller.ps1
+          -Platform ARM64
+          -Version $env:RELEASE_VERSION
+          -SkipAppBuild
+          -InnoCompilerPath $env:INNO_SETUP_COMPILER
+
+      - name: Sign installers
+        if: steps.signing.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          Get-ChildItem artifacts/installer/WuPilot-*-setup.exe | ForEach-Object {
+            & $env:SIGNTOOL_PATH sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com `
+              /f $env:WINDOWS_SIGNING_CERTIFICATE_PATH /p $env:CERTIFICATE_PASSWORD $_.FullName
+            if ($LASTEXITCODE -ne 0) {
+              throw "Signing failed for $($_.FullName)."
+            }
+            & $env:SIGNTOOL_PATH verify /pa $_.FullName
+            if ($LASTEXITCODE -ne 0) {
+              throw "Signature verification failed for $($_.FullName)."
+            }
+          }
+
+      - name: Write release checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem artifacts/installer/WuPilot-*-setup.exe | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)" | Set-Content -LiteralPath "$($_.FullName).sha256" -Encoding ascii
+          }
+
+      - name: Upload installer workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: WuPilot-${{ github.ref_name }}-installers
+          path: |
+            artifacts/installer/WuPilot-*-setup.exe
+            artifacts/installer/WuPilot-*-setup.exe.sha256
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $assets = Get-ChildItem artifacts/installer/WuPilot-*-setup.exe* |
+            Select-Object -ExpandProperty FullName
+          $preamble = @"
+          Download the installer for your Windows architecture:
+
+          - `win-x64` for Intel and AMD 64-bit PCs.
+          - `win-arm64` for Windows on Arm devices.
+
+          Each installer is self-contained and requests administrator access because WuPilot performs elevated Windows Update diagnostics and repair actions. SHA-256 checksum files are included alongside the installers.
+          "@
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $assets --clobber
+          }
+          else {
+            gh release create $tag $assets --verify-tag --generate-notes `
+              --title "WuPilot $env:RELEASE_VERSION" --notes $preamble
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw 'GitHub Release publishing failed.'
+          }
