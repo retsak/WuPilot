@@ -12,7 +12,7 @@ public sealed class EvidenceExportServiceTests
         Directory.CreateDirectory(root);
         try
         {
-            var report = CreateReport();
+            var report = CreateReport() with { TechnicianNotes = "Ticket INC-4242: reproduce before remediation." };
             var service = new EvidenceExportService(root);
             var output = await service.ExportAsync(report, CreateDiagnostics(report.Device), null, CancellationToken.None);
 
@@ -26,7 +26,11 @@ public sealed class EvidenceExportServiceTests
             Assert.Contains("1.2.3.4", driverCsv);
             Assert.Contains("1.0.0.0", driverCsv);
             Assert.Contains("oem42.inf", driverCsv);
-            Assert.Contains("not the Intune driver inventory ID", await File.ReadAllTextAsync(Path.Combine(output, "intune-review.html")));
+            var html = await File.ReadAllTextAsync(Path.Combine(output, "intune-review.html"));
+            Assert.Contains("not the Intune driver inventory ID", html);
+            Assert.Contains("INC-4242", html);
+            Assert.Contains("INC-4242", await File.ReadAllTextAsync(Path.Combine(output, "README.txt")));
+            Assert.Contains("INC-4242", await File.ReadAllTextAsync(Path.Combine(output, "scan-report.json")));
             Assert.Contains("0x80240016", await File.ReadAllTextAsync(Path.Combine(output, "update-history.csv")));
         }
         finally

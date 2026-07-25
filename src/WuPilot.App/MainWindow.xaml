@@ -7,7 +7,7 @@
     mc:Ignorable="d"
     Title="WuPilot">
 
-    <Grid x:Name="RootGrid">
+    <Grid x:Name="RootGrid" Loaded="RootGrid_Loaded">
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
             <RowDefinition Height="*" />
@@ -26,23 +26,36 @@
                 <TextBlock Text="Windows Update Workbench" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
             <Border Grid.Column="2" Margin="8,0,144,0" Padding="10,4" CornerRadius="12" Background="{ThemeResource SystemFillColorCautionBackgroundBrush}" VerticalAlignment="Center">
-                <TextBlock Text="Administrator" FontSize="12" />
+                <TextBlock x:Name="ElevationBadgeText" Text="Checking access…" FontSize="12" />
             </Border>
         </Grid>
 
         <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="LeftCompact" IsBackButtonVisible="Collapsed" IsSettingsVisible="False" SelectionChanged="Navigation_SelectionChanged">
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Name="ScanNav" Content="Scan and review" Tag="scan" Icon="Find" IsSelected="True" />
+                <NavigationViewItem x:Name="CompareNav" Content="Compare scans" Tag="compare">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE8AB;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Watchlist" Tag="watchlist">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE734;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Registered sources" Tag="sources">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE774;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="Diagnostics" Tag="diagnostics">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE9D9;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Activity" Tag="activity" Icon="Clock" />
+                <NavigationViewItem Content="Update history" Tag="history" Icon="Clock" />
+                <NavigationViewItem Content="Activity" Tag="activity">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE9D5;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="About" Tag="about" Icon="Help" />
             </NavigationView.MenuItems>
 
             <Grid>
                 <Grid x:Name="ScanView" Padding="24,16,24,20">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
@@ -72,11 +85,24 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                                <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0">
+                                    <Button Content="Policy only" Tag="Policy" Click="ProviderShortcut_Click" />
+                                    <Button Content="Microsoft sources" Tag="Microsoft" Click="ProviderShortcut_Click" />
+                                    <Button Content="All" Tag="All" Click="ProviderShortcut_Click" />
+                                    <Button Content="Clear" Tag="Clear" Click="ProviderShortcut_Click" />
+                                </StackPanel>
                                 <TextBox x:Name="CustomServiceIdBox" Header="Custom service ID (optional)" PlaceholderText="WUA service GUID" Width="360" HorizontalAlignment="Left" Margin="0,8,0,0" />
                                 <TextBox x:Name="OfflineCabPathBox" Header="Offline catalog (optional)" PlaceholderText="C:\support\Wsusscn2.cab — security metadata only; no drivers" Width="520" HorizontalAlignment="Left" Margin="0,8,0,0" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Spacing="8">
-                                <TextBlock Text="Search profile" FontWeight="SemiBold" />
+                                <TextBlock Text="Saved scan profiles" FontWeight="SemiBold" />
+                                <ComboBox x:Name="SavedProfileCombo" ItemsSource="{x:Bind SavedProfiles}" DisplayMemberPath="Name" PlaceholderText="Choose a saved profile" HorizontalAlignment="Stretch" />
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Button Content="Apply" Click="ApplySavedProfile_Click" />
+                                    <Button Content="Save current" Click="SaveProfile_Click" />
+                                    <Button Content="Delete" Click="DeleteProfile_Click" />
+                                </StackPanel>
+                                <TextBlock Text="Search profile" FontWeight="SemiBold" Margin="0,4,0,0" />
                                 <ComboBox x:Name="PresetCombo" ItemsSource="{x:Bind PresetOptions}" DisplayMemberPath="DisplayName" SelectedIndex="2" SelectionChanged="PresetCombo_SelectionChanged" HorizontalAlignment="Stretch" />
                                 <TextBox x:Name="CustomCriteriaBox" Header="Custom WUA criteria" PlaceholderText="IsInstalled=0 and Type='Driver'" Visibility="Collapsed" />
                                 <CheckBox x:Name="SupersededCheck" Content="Include potentially superseded updates" />
@@ -88,20 +114,53 @@
                         </Grid>
                     </Border>
 
-                    <Grid Grid.Row="2" ColumnSpacing="16">
+                    <Border x:Name="ScanInsightCard" Grid.Row="2" Style="{StaticResource SectionCardStyle}" Margin="0,0,0,16" Visibility="Collapsed">
+                        <Grid ColumnSpacing="16" RowSpacing="10">
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Scan insights" FontWeight="SemiBold" />
+                                <TextBlock x:Name="InsightCountsText" TextWrapping="Wrap" />
+                                <TextBlock x:Name="InsightSizeText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="4">
+                                <TextBlock Text="Safety and source health" FontWeight="SemiBold" />
+                                <TextBlock x:Name="InsightSafetyText" TextWrapping="Wrap" />
+                                <TextBlock x:Name="ComparisonPreviewText" Foreground="{StaticResource WuPilotAccentBrush}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Spacing="8" VerticalAlignment="Center">
+                                <Button x:Name="ViewChangesButton" Content="View comparison" Click="ShowComparison_Click" IsEnabled="False" />
+                                <Button x:Name="RetryFailedButton" Content="Retry failed sources" Click="RetryFailedSources_Click" IsEnabled="False" />
+                            </StackPanel>
+                            <TextBox x:Name="TechnicianNotesBox" Grid.Row="1" Grid.ColumnSpan="3" Header="Technician notes included with evidence exports" PlaceholderText="Add ticket context, observed behavior, or follow-up guidance…" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56" MaxHeight="110" />
+                        </Grid>
+                    </Border>
+
+                    <Grid Grid.Row="3" ColumnSpacing="16">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="3*" MinWidth="460" /><ColumnDefinition Width="2*" MinWidth="330" /></Grid.ColumnDefinitions>
                         <Border Style="{StaticResource SectionCardStyle}" Padding="0">
                             <Grid>
                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                                <Grid Padding="16,12" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+                                <Grid Padding="16,12" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" RowSpacing="8">
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                     <StackPanel Orientation="Horizontal" Spacing="12">
                                         <TextBlock Text="Results" FontWeight="SemiBold" />
                                         <TextBlock Text="{x:Bind ResultSummary, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="VisibleResultCountText" Text="0 shown" Foreground="{StaticResource WuPilotAccentBrush}" />
                                     </StackPanel>
-                                    <TextBox x:Name="FilterBox" Grid.Column="1" Width="220" PlaceholderText="Filter results" TextChanged="FilterBox_TextChanged" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                        <Button Content="Select visible" Click="SelectVisible_Click" Padding="10,4" />
+                                        <Button Content="Clear selection" Click="ClearSelection_Click" Padding="10,4" />
+                                        <Button Content="Reset filters" Click="ClearResultFilters_Click" Padding="10,4" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="8">
+                                        <TextBox x:Name="FilterBox" Width="240" PlaceholderText="Title, source, KB, or CVE" TextChanged="FilterBox_TextChanged" />
+                                        <ComboBox x:Name="ResultFilterCombo" Width="150" ItemsSource="{x:Bind ResultFilterOptions}" DisplayMemberPath="DisplayName" SelectedIndex="0" SelectionChanged="ResultFilter_SelectionChanged" />
+                                        <ComboBox x:Name="ResultSortCombo" Width="190" ItemsSource="{x:Bind ResultSortOptions}" DisplayMemberPath="DisplayName" SelectedIndex="0" SelectionChanged="ResultSort_SelectionChanged" />
+                                    </StackPanel>
                                 </Grid>
-                                <ListView x:Name="UpdatesList" Grid.Row="1" ItemsSource="{x:Bind VisibleUpdates}" SelectionChanged="UpdatesList_SelectionChanged" SelectionMode="Single">
+                                <ListView x:Name="UpdatesList" Grid.Row="1" ItemsSource="{x:Bind VisibleUpdates}" SelectionChanged="UpdatesList_SelectionChanged" SelectionMode="Multiple">
                                     <ListView.ItemTemplate>
                                         <DataTemplate>
                                             <Grid Padding="8" MinHeight="74">
@@ -143,10 +202,20 @@
                                         <TextBlock Grid.Row="8" Text="Categories" FontWeight="SemiBold" /><TextBlock x:Name="DetailCategories" Grid.Row="8" Grid.Column="1" TextWrapping="Wrap" />
                                     </Grid>
                                     <InfoBar x:Name="DetailWarning" Severity="Warning" IsOpen="False" IsClosable="False" Title="Review before installation" Message="Direct installation tests this device only. Use the evidence bundle and Intune deployment rings for broad rollout." />
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <Button x:Name="DownloadButton" Content="Download" Click="UpdateAction_Click" Tag="Download" IsEnabled="False" />
-                                        <Button x:Name="InstallButton" Content="Install" Click="UpdateAction_Click" Tag="Install" IsEnabled="False" />
-                                        <Button x:Name="HideButton" Content="Hide" Click="UpdateAction_Click" Tag="Hide" IsEnabled="False" />
+                                    <StackPanel Spacing="8">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <Button x:Name="CopyDetailsButton" Content="Copy details" Click="CopyDetails_Click" IsEnabled="False" />
+                                            <Button x:Name="OpenSupportButton" Content="Support page" Click="OpenSupport_Click" IsEnabled="False" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <Button x:Name="WatchUpdateButton" Content="Add to watchlist" Click="ToggleWatch_Click" IsEnabled="False" />
+                                            <Button x:Name="ExportSelectedButton" Content="Export selected" Click="ExportSelected_Click" IsEnabled="False" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <Button x:Name="DownloadButton" Content="Download" Click="UpdateAction_Click" Tag="Download" IsEnabled="False" />
+                                            <Button x:Name="InstallButton" Content="Install" Click="UpdateAction_Click" Tag="Install" IsEnabled="False" />
+                                            <Button x:Name="HideButton" Content="Hide" Click="UpdateAction_Click" Tag="Hide" IsEnabled="False" />
+                                        </StackPanel>
                                     </StackPanel>
                                 </StackPanel>
                             </ScrollViewer>
@@ -154,12 +223,137 @@
                     </Grid>
                 </Grid>
 
+                <Grid x:Name="CompareView" Visibility="Collapsed" Padding="24,16,24,20">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Compare scans" Style="{StaticResource TitleTextBlockStyle}" />
+                            <TextBlock Text="See what changed between the two most recent scans in this session." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Return to scan" Click="ReturnToScan_Click" VerticalAlignment="Center" />
+                    </Grid>
+                    <Border Grid.Row="1" Style="{StaticResource SectionCardStyle}" Margin="0,16">
+                        <StackPanel Spacing="6">
+                            <TextBlock x:Name="ComparisonSummaryText" Text="Run two scans to compare results." FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock x:Name="ComparisonContextText" Text="Comparison is session-only and does not change update state." Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Row="2" Style="{StaticResource SectionCardStyle}" Padding="0">
+                        <Grid>
+                            <TextBlock x:Name="ComparisonEmptyText" Text="No comparison changes to display." HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <ListView ItemsSource="{x:Bind ScanChanges}">
+                                <ListView.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Padding="14,10" ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="130" /><ColumnDefinition Width="*" /><ColumnDefinition Width="220" /></Grid.ColumnDefinitions>
+                                            <Border Padding="8,3" CornerRadius="12" Background="{ThemeResource ControlFillColorSecondaryBrush}" HorizontalAlignment="Left" VerticalAlignment="Top">
+                                                <TextBlock Text="{Binding KindLabel}" FontSize="12" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Spacing="3">
+                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding Summary}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="2" Text="{Binding Identity}" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" HorizontalAlignment="Right" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <Grid x:Name="WatchlistView" Visibility="Collapsed" Padding="24,16,24,20">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Update watchlist" Style="{StaticResource TitleTextBlockStyle}" />
+                            <TextBlock Text="Track important updates across scans without downloading, installing, or approving them." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock x:Name="WatchlistSummaryText" Text="0 watched" Foreground="{StaticResource WuPilotAccentBrush}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Button Content="Copy watchlist" Click="CopyWatchlist_Click" />
+                            <Button Content="Remove selected" Click="RemoveWatched_Click" />
+                        </StackPanel>
+                    </Grid>
+                    <InfoBar Grid.Row="1" Margin="0,16" IsOpen="True" IsClosable="False" Severity="Informational" Title="Tracking only" Message="The watchlist stores last-known metadata locally. It refreshes after each scan and never queues an update action." />
+                    <Border Grid.Row="2" Style="{StaticResource SectionCardStyle}" Padding="0">
+                        <ListView x:Name="WatchlistList" ItemsSource="{x:Bind WatchedUpdates}" SelectionMode="Single">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="14,10" ColumnSpacing="14">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="250" /><ColumnDefinition Width="210" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding Identity}" FontFamily="Consolas" FontSize="11" />
+                                            <TextBlock Text="{Binding Sources}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Spacing="3">
+                                            <TextBlock Text="{Binding StatusLabel}" Foreground="{StaticResource WuPilotAccentBrush}" />
+                                            <TextBlock Text="{Binding StateLabel}" TextWrapping="Wrap" FontSize="12" />
+                                            <TextBlock Text="{Binding DriverLabel}" TextWrapping="Wrap" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" HorizontalAlignment="Right">
+                                            <Border Padding="8,3" CornerRadius="12" Background="{ThemeResource ControlFillColorSecondaryBrush}" HorizontalAlignment="Right"><TextBlock Text="{Binding TypeLabel}" FontSize="11" /></Border>
+                                            <TextBlock Text="{Binding CheckedLabel}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="11" Margin="0,6,0,0" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Border>
+                </Grid>
+
+                <Grid x:Name="SourcesView" Visibility="Collapsed" Padding="24,16,24,20">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Registered update sources" Style="{StaticResource TitleTextBlockStyle}" />
+                            <TextBlock Text="Inspect Windows Update Agent service registrations without changing them." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock x:Name="RegisteredSourcesSummaryText" Text="Refresh to inventory WUA service registrations." Foreground="{StaticResource WuPilotAccentBrush}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Button Content="Copy inventory" Click="CopySources_Click" />
+                            <Button Content="Use selected for scan" Click="UseSourceForScan_Click" />
+                            <Button Content="Refresh sources" Click="RefreshSources_Click" Style="{StaticResource AccentButtonStyle}" />
+                        </StackPanel>
+                    </Grid>
+                    <InfoBar Grid.Row="1" Margin="0,16" IsOpen="True" IsClosable="False" Severity="Informational" Title="Read-only inventory" Message="WuPilot lists existing registrations only. Selecting a source fills the custom scan field; it does not call AddService2 or register the device for a new service." />
+                    <Border Grid.Row="2" Style="{StaticResource SectionCardStyle}" Padding="0">
+                        <ListView x:Name="RegisteredSourcesList" ItemsSource="{x:Bind RegisteredSources}" SelectionMode="Single">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="14,10" ColumnSpacing="14">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="240" /><ColumnDefinition Width="*" /><ColumnDefinition Width="260" /></Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding CapabilityLabel}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding ServiceId}" FontFamily="Consolas" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Text="{Binding RoleLabel}" Foreground="{StaticResource WuPilotAccentBrush}" TextWrapping="Wrap" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Border>
+                </Grid>
+
                 <Grid x:Name="DiagnosticsView" Visibility="Collapsed" Padding="24,16,24,20">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <StackPanel><TextBlock Text="Diagnostics and repair" Style="{StaticResource TitleTextBlockStyle}" /><TextBlock Text="Read local policy, service, proxy, DNS, WUA, join, and reboot state before changing the device." Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></StackPanel>
-                        <Button Grid.Column="1" Content="Refresh checks" Click="Diagnostics_Click" Style="{StaticResource AccentButtonStyle}" />
+                        <StackPanel>
+                            <TextBlock Text="Diagnostics and repair" Style="{StaticResource TitleTextBlockStyle}" />
+                            <TextBlock Text="Read local policy, service, proxy, DNS, WUA, join, and reboot state before changing the device." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock x:Name="DiagnosticSummaryText" Text="Run checks to build a diagnostic summary." Foreground="{StaticResource WuPilotAccentBrush}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Button Content="Windows Update settings" Click="OpenWindowsUpdate_Click" />
+                            <Button Content="Copy summary" Click="CopyDiagnostics_Click" />
+                            <Button Content="Refresh checks" Click="Diagnostics_Click" Style="{StaticResource AccentButtonStyle}" />
+                        </StackPanel>
                     </Grid>
                     <Border Grid.Row="1" Style="{StaticResource SectionCardStyle}" Margin="0,16">
                         <StackPanel Spacing="10">
@@ -176,24 +370,108 @@
                     </Border>
                     <Grid Grid.Row="2" ColumnSpacing="16">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="1.2*" /><ColumnDefinition Width="1*" /></Grid.ColumnDefinitions>
-                        <Border Style="{StaticResource SectionCardStyle}"><StackPanel><TextBlock Text="Findings" FontWeight="SemiBold" Margin="0,0,0,8" /><ListView ItemsSource="{x:Bind DiagnosticFindings}"><ListView.ItemTemplate><DataTemplate><StackPanel Padding="4,8" Spacing="3"><TextBlock Text="{Binding Title}" FontWeight="SemiBold" /><TextBlock Text="{Binding Summary}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{Binding Recommendation}" TextWrapping="Wrap" Foreground="{StaticResource WuPilotAccentBrush}" /></StackPanel></DataTemplate></ListView.ItemTemplate></ListView></StackPanel></Border>
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <Grid RowSpacing="8">
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="Findings" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <TextBox x:Name="DiagnosticFilterBox" Width="220" PlaceholderText="Filter findings" TextChanged="DiagnosticFilter_Changed" />
+                                    <ComboBox x:Name="DiagnosticSeverityCombo" Width="150" ItemsSource="{x:Bind DiagnosticSeverityOptions}" DisplayMemberPath="DisplayName" SelectedIndex="0" SelectionChanged="DiagnosticSeverity_SelectionChanged" />
+                                </StackPanel>
+                                <ListView Grid.Row="1" ItemsSource="{x:Bind DiagnosticFindings}">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Padding="4,8" Spacing="3">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <Border Padding="7,2" CornerRadius="10" Background="{ThemeResource ControlFillColorSecondaryBrush}"><TextBlock Text="{Binding SeverityLabel}" FontSize="11" /></Border>
+                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <TextBlock Text="{Binding Recommendation}" TextWrapping="Wrap" Foreground="{StaticResource WuPilotAccentBrush}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                            </Grid>
+                        </Border>
                         <Border Grid.Column="1" Style="{StaticResource SectionCardStyle}"><ScrollViewer><StackPanel Spacing="8"><TextBlock Text="Recent update history" FontWeight="SemiBold" /><ItemsControl ItemsSource="{x:Bind UpdateHistory}"><ItemsControl.ItemTemplate><DataTemplate><Grid Padding="0,4" ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="110" /><ColumnDefinition Width="*" /><ColumnDefinition Width="42" /></Grid.ColumnDefinitions><TextBlock Text="{Binding Date}" FontSize="11" /><TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" /><TextBlock Grid.Column="2" Text="{Binding ResultCode}" FontFamily="Consolas" HorizontalAlignment="Right" /></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><TextBlock Text="Service state" FontWeight="SemiBold" Margin="0,12,0,0" /><ItemsControl ItemsSource="{x:Bind ServiceStates}"><ItemsControl.ItemTemplate><DataTemplate><Grid Padding="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock Text="{Binding Key}" FontFamily="Consolas" /><TextBlock Grid.Column="1" Text="{Binding Value}" /></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><TextBlock Text="Policy evidence" FontWeight="SemiBold" Margin="0,12,0,0" /><ItemsControl ItemsSource="{x:Bind PolicyStates}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Padding="0,4"><TextBlock Text="{Binding Key}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="11" /><TextBlock Text="{Binding Value}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></ScrollViewer></Border>
                     </Grid>
                 </Grid>
 
+                <Grid x:Name="HistoryView" Visibility="Collapsed" Padding="24,16,24,20">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Update history" Style="{StaticResource TitleTextBlockStyle}" />
+                            <TextBlock Text="Explore recent Windows Update Agent operations without starting a new scan." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock x:Name="HistorySummaryText" Text="Refresh to load up to 500 recent history events." Foreground="{StaticResource WuPilotAccentBrush}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Button Content="Copy visible" Click="CopyHistory_Click" />
+                            <Button Content="Refresh history" Click="RefreshHistory_Click" Style="{StaticResource AccentButtonStyle}" />
+                        </StackPanel>
+                    </Grid>
+                    <Border Grid.Row="1" Style="{StaticResource SectionCardStyle}" Margin="0,16">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBox x:Name="HistoryFilterBox" Width="320" PlaceholderText="Title, HRESULT, source, or Update ID" TextChanged="HistoryFilter_Changed" />
+                            <CheckBox x:Name="HistoryFailuresOnlyCheck" Content="Failures and partial results only" Checked="HistoryFilter_Changed" Unchecked="HistoryFilter_Changed" VerticalAlignment="Center" />
+                            <TextBlock x:Name="VisibleHistoryCountText" Text="0 shown" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Row="2" Style="{StaticResource SectionCardStyle}" Padding="0">
+                        <ListView ItemsSource="{x:Bind VisibleUpdateHistory}">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="14,9" ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="130" /></Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding DateLabel}" FontSize="12" />
+                                            <TextBlock Text="{Binding OperationLabel}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="11" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="{Binding ResultLabel}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding HResultLabel}" FontFamily="Consolas" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" Spacing="2">
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" />
+                                            <TextBlock Text="{Binding SourceLabel}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="3" Text="{Binding UpdateIdLabel}" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap" HorizontalAlignment="Right" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Border>
+                </Grid>
+
                 <Grid x:Name="ActivityView" Visibility="Collapsed" Padding="24,16,24,20">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                    <StackPanel><TextBlock Text="Activity" Style="{StaticResource TitleTextBlockStyle}" /><TextBlock Text="Actions and results from this session. Exported evidence is the durable record." Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel><TextBlock Text="Activity" Style="{StaticResource TitleTextBlockStyle}" /><TextBlock Text="Actions and results from this session. Exported evidence is the durable record." Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Button Content="Copy activity" Click="CopyActivity_Click" />
+                            <Button Content="Clear view" Click="ClearActivity_Click" />
+                        </StackPanel>
+                    </Grid>
                     <Border Grid.Row="1" Style="{StaticResource SectionCardStyle}" Margin="0,16,0,0"><ListView ItemsSource="{x:Bind ActivityItems}"><ListView.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" FontFamily="Consolas" TextWrapping="Wrap" Margin="0,4" /></DataTemplate></ListView.ItemTemplate></ListView></Border>
                 </Grid>
 
                 <Grid x:Name="AboutView" Visibility="Collapsed" Padding="24,16,24,20">
                     <StackPanel MaxWidth="720" HorizontalAlignment="Left" Spacing="14">
                         <TextBlock Text="About WuPilot" Style="{StaticResource TitleTextBlockStyle}" />
+                        <TextBlock x:Name="AppVersionText" Foreground="{StaticResource WuPilotAccentBrush}" />
                         <TextBlock Text="WuPilot is a technician workbench for inspecting Windows Update Agent behavior, comparing scan sources, validating one-device applicability, and creating an evidence handoff for Intune administrators." TextWrapping="Wrap" />
                         <InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Title="Policy-aware, not policy-breaking" Message="Direct-source scans are diagnostic comparisons. Windows policy, endpoint access, service registration, and Microsoft applicability rules still apply." />
                         <TextBlock Text="Safety model" FontWeight="SemiBold" FontSize="18" />
                         <TextBlock Text="The application requires elevation, serializes WUA operations, keeps installation user-confirmed, does not auto-reboot, and uses recoverable cache resets. Evidence bundles can contain device and tenant identifiers; handle them as support data." TextWrapping="Wrap" />
+                        <TextBlock Text="Appearance" FontWeight="SemiBold" FontSize="18" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="System theme" Tag="System" Click="Theme_Click" />
+                            <Button Content="Light" Tag="Light" Click="Theme_Click" />
+                            <Button Content="Dark" Tag="Dark" Click="Theme_Click" />
+                        </StackPanel>
                         <TextBlock Text="Microsoft references" FontWeight="SemiBold" FontSize="18" />
                         <HyperlinkButton Content="WinUI 3 documentation" NavigateUri="https://learn.microsoft.com/windows/apps/winui/winui3/" />
                         <HyperlinkButton Content="Windows Update Agent API" NavigateUri="https://learn.microsoft.com/windows/win32/wua_sdk/using-the-windows-update-agent-api" />

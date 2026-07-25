@@ -145,6 +145,7 @@ public sealed class EvidenceExportService(string? exportRoot = null) : IEvidence
             <style>body{font:14px/1.45 Segoe UI,Arial,sans-serif;margin:32px;color:#1b1b1b}h1{margin-bottom:4px}.meta{color:#555}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #d4d4d4;padding:8px;text-align:left;vertical-align:top}th{background:#f3f3f3}code{font:12px Consolas,monospace}.warning{color:#8a4b00}.error{color:#a80000}.information{color:#005a9e}.note{padding:12px;background:#fff4ce;border-left:4px solid #ffb900}</style></head>
             <body><h1>Intune driver review evidence</h1><p class="meta">Device {{H(report.Device.ComputerName)}} · Scan {{H(report.ScanId.ToString())}} · {{H(report.CompletedAt.ToString("u"))}}</p>
             <div class="note"><strong>Matching guidance:</strong> WUA UpdateID is a local catalog identity and is not the Intune driver inventory ID. In Intune, match on driver name, manufacturer, version/date, and class, then validate applicable-device counts before approval.</div>
+            <h2>Technician notes</h2><p>{{H(report.TechnicianNotes ?? "No technician notes were supplied.")}}</p>
             <h2>Device</h2><dl><dt>Manufacturer / model</dt><dd>{{H(report.Device.Manufacturer)}} / {{H(report.Device.Model)}}</dd><dt>OS</dt><dd>{{H(report.Device.OsCaption)}} {{H(report.Device.OsVersion)}} ({{H(report.Device.OsBuild)}})</dd><dt>Entra device ID</dt><dd><code>{{H(report.Device.EntraDeviceId)}}</code></dd></dl>
             <h2>Drivers ({{drivers.Length}})</h2><table><thead><tr><th>Name</th><th>Offered version* / date</th><th>Installed version / date</th><th>Manufacturer</th><th>Provider</th><th>Model</th><th>Class</th><th>Hardware ID</th><th>Match</th><th>WUA identity</th><th>Sources</th></tr></thead><tbody>{{rows}}</tbody></table><p class="meta">* Offered version is inferred from the catalog title because the WUA driver interface does not expose a standalone version string. Installed-driver matches use exact or family PnP identifiers and include a confidence score. Confirm both records in Intune and Device Manager.</p>
             <h2>Diagnostic findings</h2>{{findings}}
@@ -165,6 +166,7 @@ public sealed class EvidenceExportService(string? exportRoot = null) : IEvidence
         Criteria: {{report.Criteria}}
         Included updates: {{updates.Count}}
         Included drivers: {{updates.Count(static update => update.IsDriver)}}
+        Technician notes: {{report.TechnicianNotes ?? "None"}}
 
         Files
         -----

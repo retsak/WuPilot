@@ -33,16 +33,42 @@ public sealed class ScanPresetOption(ScanPreset value, string displayName, strin
 
 public sealed class DiagnosticFindingItem(DiagnosticFinding finding)
 {
-    public string Title => finding.Title;
-    public string Summary => finding.Summary;
-    public string? Recommendation => finding.Recommendation;
+    public DiagnosticFinding Finding { get; } = finding;
+    public string Title => Finding.Title;
+    public string Summary => Finding.Summary;
+    public string? Recommendation => Finding.Recommendation;
+    public string SeverityLabel => Finding.Severity.ToString();
 }
 
 public sealed class UpdateHistoryItem(UpdateHistoryRecord record)
 {
-    public DateTimeOffset? Date => record.Date;
-    public string? Title => record.Title;
-    public int ResultCode => record.ResultCode;
+    public UpdateHistoryRecord Record { get; } = record;
+    public DateTimeOffset? Date => Record.Date;
+    public string? Title => Record.Title;
+    public int ResultCode => Record.ResultCode;
+    public string DateLabel => Record.Date?.ToString("g") ?? "Date unavailable";
+    public string OperationLabel => Record.Operation switch
+    {
+        1 => "Installation",
+        2 => "Uninstallation",
+        3 => "Other",
+        _ => $"Operation {Record.Operation}"
+    };
+    public string ResultLabel => Record.ResultCode switch
+    {
+        2 => "Succeeded",
+        3 => "Succeeded with errors",
+        4 => "Failed",
+        5 => "Aborted",
+        _ => $"Result {Record.ResultCode}"
+    };
+    public string HResultLabel => $"0x{unchecked((uint)Record.HResult):X8}";
+    public string UpdateIdLabel => Record.UpdateId ?? "—";
+    public string SourceLabel => string.Join(" · ", new[]
+    {
+        Record.ClientApplicationId,
+        Record.ServiceId
+    }.Where(static value => !string.IsNullOrWhiteSpace(value)));
 }
 
 public sealed class UpdateListItem(UpdateRecord update)
@@ -75,4 +101,101 @@ public sealed class UpdateListItem(UpdateRecord update)
         }
         return $"{value:0.#} {units[unit]}";
     }
+}
+
+public enum ResultFilter
+{
+    All,
+    Drivers,
+    Software,
+    Installed,
+    Downloaded,
+    Hidden,
+    RestartRequired
+}
+
+public enum ResultSort
+{
+    Default,
+    Title,
+    SizeDescending,
+    DateDescending,
+    Severity
+}
+
+public sealed class ResultFilterOption(ResultFilter value, string displayName)
+{
+    public ResultFilter Value { get; } = value;
+    public string DisplayName { get; } = displayName;
+}
+
+public sealed class ResultSortOption(ResultSort value, string displayName)
+{
+    public ResultSort Value { get; } = value;
+    public string DisplayName { get; } = displayName;
+}
+
+public sealed class DiagnosticSeverityOption(DiagnosticSeverity? value, string displayName)
+{
+    public DiagnosticSeverity? Value { get; } = value;
+    public string DisplayName { get; } = displayName;
+}
+
+public sealed class ScanChangeItem(ScanUpdateChange change)
+{
+    public string Title { get; } = change.Title;
+    public string KindLabel { get; } = change.Kind switch
+    {
+        ScanChangeKind.New => "New",
+        ScanChangeKind.Removed => "No longer offered",
+        ScanChangeKind.RevisionChanged => "Revision changed",
+        ScanChangeKind.StateChanged => "State changed",
+        _ => change.Kind.ToString()
+    };
+    public string Summary { get; } = change.Summary;
+    public string Identity { get; } = change.CurrentRevision is not null
+        ? $"{change.UpdateId}.{change.CurrentRevision}"
+        : $"{change.UpdateId}.{change.PreviousRevision}";
+}
+
+public sealed class SavedScanProfileItem(SavedScanProfile profile)
+{
+    public SavedScanProfile Profile { get; } = profile;
+    public string Name => Profile.Name;
+}
+
+public sealed class UpdateSourceRegistrationItem(UpdateSourceRegistration source)
+{
+    public UpdateSourceRegistration Source { get; } = source;
+    public string Name => Source.Name;
+    public string ServiceId => Source.ServiceId;
+    public string RoleLabel => string.Join(" · ", new[]
+    {
+        Source.IsDefaultAuService ? "Automatic Updates default" : null,
+        Source.IsManaged ? "Managed" : "Unmanaged",
+        Source.IsScanPackageService ? "Offline scan package" : null
+    }.Where(static value => !string.IsNullOrWhiteSpace(value)));
+    public string CapabilityLabel => Source.OffersWindowsUpdates
+        ? "Offers Windows updates"
+        : "Registered for another update role";
+}
+
+public sealed class WatchedUpdateItem(WatchedUpdate update)
+{
+    public WatchedUpdate Update { get; } = update;
+    public string Title => Update.Title;
+    public string Identity => $"{Update.UpdateId}.{Update.RevisionNumber}";
+    public string TypeLabel => Update.Kind.ToString();
+    public string Sources => string.Join(" · ", Update.ProviderNames);
+    public string StatusLabel => Update.IsOfferedInLastScan switch
+    {
+        true => "Offered in latest scan",
+        false => "Not offered in latest scan",
+        null => "Not checked this session"
+    };
+    public string StateLabel => $"Installed: {Update.IsInstalled} · Downloaded: {Update.IsDownloaded} · Hidden: {Update.IsHidden}";
+    public string DriverLabel => Update.Kind == UpdateKind.Driver
+        ? $"Offered {Update.OfferedDriverVersion ?? "version unavailable"} · {Update.OfferedDriverDate?.ToString("yyyy-MM-dd") ?? "date unavailable"}"
+        : "Software update";
+    public string CheckedLabel => $"Last checked {Update.LastCheckedAt:g}";
 }
