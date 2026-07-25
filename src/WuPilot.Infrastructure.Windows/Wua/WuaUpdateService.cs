@@ -124,6 +124,15 @@ public sealed class WuaUpdateService(
                 effectiveProvider = provider with { ServiceId = scanPackageServiceId };
             }
 
+            if (effectiveProvider.ServerSelection == UpdateServerSelection.Others &&
+                !string.IsNullOrWhiteSpace(effectiveProvider.ServiceId) &&
+                provider.ScanPackagePath is null)
+            {
+                dynamic serviceManager = WuaCom.Create("Microsoft.Update.ServiceManager");
+                serviceManagerObject = serviceManager;
+                EnsureServiceRegistered(serviceManager, effectiveProvider);
+            }
+
             dynamic searcher = session.CreateUpdateSearcher();
             searcherObject = searcher;
             ConfigureSearcher(searcher, effectiveProvider, request.Online && provider.ScanPackagePath is null, request.IncludePotentiallySuperseded);
@@ -203,6 +212,7 @@ public sealed class WuaUpdateService(
         object? searcherObject = null;
         object? resultObject = null;
         object? collectionObject = null;
+        object? serviceManagerObject = null;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -210,6 +220,13 @@ public sealed class WuaUpdateService(
             dynamic session = WuaCom.Create("Microsoft.Update.Session");
             sessionObject = session;
             session.ClientApplicationID = ClientApplicationId;
+            if (request.Provider.ServerSelection == UpdateServerSelection.Others &&
+                !string.IsNullOrWhiteSpace(request.Provider.ServiceId))
+            {
+                dynamic serviceManager = WuaCom.Create("Microsoft.Update.ServiceManager");
+                serviceManagerObject = serviceManager;
+                EnsureServiceRegistered(serviceManager, request.Provider);
+            }
             dynamic searcher = session.CreateUpdateSearcher();
             searcherObject = searcher;
             ConfigureSearcher(searcher, request.Provider, online: true, includeSuperseded: true);
@@ -293,8 +310,46 @@ public sealed class WuaUpdateService(
             WuaCom.FinalRelease(collectionObject);
             WuaCom.FinalRelease(resultObject);
             WuaCom.FinalRelease(searcherObject);
+            WuaCom.FinalRelease(serviceManagerObject);
             WuaCom.FinalRelease(sessionObject);
         }
+    }
+
+    private static void EnsureServiceRegistered(dynamic serviceManager, UpdateProviderDefinition provider)
+    {
+        object? servicesObject = null;
+        try
+        {
+            dynamic services = serviceManager.Services;
+            servicesObject = services;
+            var count = Convert.ToInt32(services.Count);
+            for (var index = 0; index < count; index++)
+            {
+                object? serviceObject = null;
+                try
+                {
+                    dynamic service = services.Item(index);
+                    serviceObject = service;
+                    var serviceId = Convert.ToString(service.ServiceID);
+                    if (string.Equals(serviceId, provider.ServiceId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+                }
+                finally
+                {
+                    WuaCom.FinalRelease(serviceObject);
+                }
+            }
+        }
+        finally
+        {
+            WuaCom.FinalRelease(servicesObject);
+        }
+
+        throw new COMException(
+            $"{provider.DisplayName} is not registered with Windows Update Agent. WuPilot did not register it because scans are read-only.",
+            unchecked((int)0x80248014));
     }
 
     private static void ConfigureSearcher(dynamic searcher, UpdateProviderDefinition provider, bool online, bool includeSuperseded)

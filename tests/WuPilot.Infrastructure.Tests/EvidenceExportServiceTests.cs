@@ -37,7 +37,7 @@ public sealed class EvidenceExportServiceTests
 
     private static ScanReport CreateReport()
     {
-        var provider = UpdateProviderDefinition.BuiltIn.Single(static item => item.Id == "driver-catalog");
+        var provider = UpdateProviderDefinition.BuiltIn.Single(static item => item.Id == "windows-update");
         var installed = new InstalledDriverInfo("ACPI\\CONTOSO0001\\0", "Contoso device", "ACPI\\CONTOSO0001", null, "Firmware", "1.0.0.0", DateTimeOffset.Parse("2025-01-01"), "Contoso", "Contoso", "oem42.inf", true, "Microsoft Windows Hardware Compatibility Publisher");
         var driver = new DriverMetadata("Contoso", "Contoso", "Model 1", "Firmware", "ACPI\\CONTOSO0001", DateTimeOffset.Parse("2026-06-01"), 0, 0, false, false, [], new InstalledDriverMatch(installed, 100, "Installed hardware ID", "ACPI\\CONTOSO0001"));
         var update = new UpdateRecord(

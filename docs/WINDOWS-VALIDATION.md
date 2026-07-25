@@ -16,7 +16,9 @@ Before launching the UI, the read-only WUA adapter assumptions can be checked in
 
 ```powershell
 ./scripts/Test-WuaReadOnly.ps1 -Provider Default
-./scripts/Test-WuaReadOnly.ps1 -Provider DriverCatalog
+./scripts/Test-WuaReadOnly.ps1 -Provider WindowsUpdate
+./scripts/Test-WuaReadOnly.ps1 -Provider MicrosoftUpdate
+./scripts/Test-WuaReadOnly.ps1 -Provider Store
 ./scripts/Test-WuaReadOnly.ps1 -OfflineCab C:\Support\Wsusscn2.cab -Criteria "IsInstalled=0"
 ```
 
@@ -26,7 +28,7 @@ The offline catalog contains security metadata only and is not a driver-source t
 
 - Launch requests UAC elevation and opens the WinUI shell without activation errors.
 - Policy-default missing-driver scan completes on an Intune-managed device.
-- Direct Windows Update, Microsoft Update, and driver-catalog scans either complete or retain an actionable per-source policy/network error.
+- Direct Windows Update, Microsoft Update, and Store scans either complete or retain an actionable per-source registration/policy/network error.
 - A multi-source scan deduplicates the same UpdateID/revision and lists every source that offered it.
 - Cancelling a long scan reports cancellation intent and exits after the active synchronous WUA call returns.
 - A driver result displays offered metadata and a matching installed device/version/date/INF/signature when the PnP identifier is present.

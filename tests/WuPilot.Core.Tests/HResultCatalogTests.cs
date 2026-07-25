@@ -19,4 +19,12 @@ public sealed class HResultCatalogTests
         Assert.Equal("0xDEADBEEF", result.Code);
         Assert.Equal("Unknown", result.Name);
     }
+
+    [Fact]
+    public void Explain_UnregisteredService_PreservesReadOnlyGuidance()
+    {
+        var result = HResultCatalog.Explain(unchecked((int)0x80248014));
+        Assert.Equal("WU_E_DS_UNKNOWNSERVICE", result.Name);
+        Assert.Contains("does not change service registration", result.Recommendation, StringComparison.OrdinalIgnoreCase);
+    }
 }
