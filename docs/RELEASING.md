@@ -17,7 +17,7 @@ Setup also offers an enabled-by-default automatic stable-release check. This wri
 The installer requests administrator access because WuPilot itself is elevation-first. It supports unattended deployment with the standard Inno Setup switches:
 
 ```powershell
-WuPilot-0.2.0-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+WuPilot-0.3.0-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 ## Create a release
@@ -27,8 +27,8 @@ WuPilot-0.2.0-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 3. Create and push an annotated tag:
 
    ```powershell
-   git tag -a v0.2.0 -m "WuPilot 0.2.0"
-   git push origin v0.2.0
+   git tag -a v0.3.0 -m "WuPilot 0.3.0"
+   git push origin v0.3.0
    ```
 
 4. Follow the **Windows release** workflow in GitHub Actions.
@@ -70,8 +70,8 @@ The PFX is written only to the temporary GitHub-hosted runner and is not uploade
 Install Inno Setup 7, then run:
 
 ```powershell
-./scripts/Build-WuPilotInstaller.ps1 -Platform x64 -Version 0.2.0
-./scripts/Build-WuPilotInstaller.ps1 -Platform ARM64 -Version 0.2.0
+./scripts/Build-WuPilotInstaller.ps1 -Platform x64 -Version 0.3.0
+./scripts/Build-WuPilotInstaller.ps1 -Platform ARM64 -Version 0.3.0
 ```
 
 Use `-InnoCompilerPath` when `ISCC.exe` is not in a standard installation path. Use `-SkipAppBuild` only when the matching self-contained publish directory already exists and has been verified.

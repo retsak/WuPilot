@@ -56,8 +56,29 @@ The offline catalog contains security metadata only and is not a driver-source t
 - The x64 and ARM64 installers display the expected version and architecture, install under Program Files, create the selected shortcuts, launch WuPilot through UAC, upgrade in place, and uninstall cleanly.
 - The automatic stable-update task defaults on, can be disabled during setup, and persists the machine preference without adding a background process.
 - Upgrading from the previous public release selects the native installer, requires confirmation, rejects a wrong checksum or architecture, warns for unsigned payloads, preserves the icon, and retains LocalAppData audit/metric state.
+- Window placement, page, theme, scan setup, result filters, performance range, policy filters, favorites, and taskbar preference survive a normal relaunch; placement is clamped after removing or rearranging a monitor.
+- Scan results, selected updates, technician notes, and staged policy changes do not reappear after relaunch.
+- Ctrl+1/2/3, Ctrl+F, F5, Ctrl+Enter, Esc, and Ctrl+Shift+E work in their documented contexts and never bypass confirmations.
+- Long operations keep global stage/percent/elapsed progress visible while navigating; taskbar state follows running, paused, failed, and acknowledged states.
+- Closing during WUA or diagnostics work offers Keep running or Request cancellation and does not terminate the synchronous call.
+- Completion notices survive relaunch for 30 days, retain at most 50 entries, navigate to the originating page, and contain no device evidence.
+- Policy favorites and combined filters persist; typed editors reject invalid values; staged batches reject drift, verify success, and retain the cart after rollback.
 - Silent installation with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` returns success and leaves WuPilot available from the Start Menu.
 - Release SHA-256 files match the downloadable installer assets, and Authenticode signatures validate when signing secrets are configured.
+
+### Quality-of-life validation captures
+
+The July 25, 2026 Windows validation run captured the restored workflow shell, typed policy change cart, cross-page operation progress, retained completion center, and restored Performance navigation state:
+
+![Restored WuPilot workflow shell](images/windows-validation-2026-07-25/qol-workflow.png)
+
+![Typed policy editor and transactional change cart](images/windows-validation-2026-07-25/qol-policy-cart.png)
+
+![Global operation progress](images/windows-validation-2026-07-25/qol-operation-progress.png)
+
+![Retained completion center](images/windows-validation-2026-07-25/qol-completion-center.png)
+
+![Restored Performance navigation state](images/windows-validation-2026-07-25/qol-restored-session.png)
 
 ## Intune acceptance
 

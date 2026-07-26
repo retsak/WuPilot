@@ -200,9 +200,11 @@ public sealed class WatchedUpdateItem(WatchedUpdate update)
     public string CheckedLabel => $"Last checked {Update.LastCheckedAt:g}";
 }
 
-public sealed class PolicyStateItem(PolicyState state)
+public sealed class PolicyStateItem(PolicyState state, bool isFavorite = false)
 {
     public PolicyState State { get; } = state;
+    public bool IsFavorite { get; set; } = isFavorite;
+    public string FavoriteGlyph => IsFavorite ? "★" : "☆";
     public string DisplayName => State.Definition.DisplayName;
     public string Category => State.Definition.Category;
     public string Description => State.Definition.Description;
@@ -211,6 +213,9 @@ public sealed class PolicyStateItem(PolicyState state)
     public string OwnershipLabel => State.Ownership.ToString();
     public string Status => State.Status;
     public string EditLabel => State.CanEdit ? "Editable" : "View only";
+    public string RequestedLabel => State.RequestedValue ?? "Windows default";
+    public string RiskLabel => State.Definition.Risk.ToString();
+    public bool HasDifference => !string.Equals(State.RequestedValue, State.EffectiveValue, StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class SettingAuditItem(SettingAuditEntry entry)
@@ -229,4 +234,27 @@ public sealed class OperationMetricItem
     public string Result => Metric.ResultCode is 2 or 3 ? "Succeeded" : $"Failed · 0x{unchecked((uint)Metric.HResult):X8}";
     public string Timing => $"Total {Format(Metric.TotalDuration)} · download {Format(Metric.DownloadDuration)} · install {Format(Metric.InstallDuration)} · {Metric.TimingConfidence}";
     private static string Format(TimeSpan value) => value == default ? "n/a" : value.TotalMinutes >= 1 ? $"{value.TotalMinutes:0.0} min" : $"{value.TotalSeconds:0.0} sec";
+}
+
+public sealed class PolicyChoiceItem(string value, string displayName)
+{
+    public string Value { get; } = value;
+    public string DisplayName { get; } = displayName;
+}
+
+public sealed class StagedPolicyChangeItem(StagedPolicyChange change)
+{
+    public StagedPolicyChange Change { get; } = change;
+    public string Title => Change.DisplayName;
+    public string Summary => $"{Change.BeforeValue ?? "Windows default"} → {(Change.Remove ? "Windows default" : Change.AfterValue)} · {Change.Risk}" +
+        (Change.RequiresRestart ? " · restart required" : string.Empty);
+    public string Warning => Change.Status;
+}
+
+public sealed class CompletionNoticeItem(CompletionNotice notice)
+{
+    public CompletionNotice Notice { get; } = notice;
+    public string Title => Notice.Title;
+    public string Summary => $"{Notice.CompletedAt:g} · {Notice.Message}";
+    public string Severity => Notice.Severity.ToString();
 }

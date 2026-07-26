@@ -84,3 +84,32 @@ public interface IAppUpdateService
     Task<DownloadedAppUpdate> DownloadAsync(AppReleaseInfo release, IProgress<OperationProgress>? progress, CancellationToken cancellationToken);
     void LaunchInstaller(DownloadedAppUpdate update);
 }
+
+public interface IAppPreferencesStore
+{
+    Task<AppPreferences> GetAsync(CancellationToken cancellationToken);
+    void ScheduleSave(AppPreferences preferences);
+    Task FlushAsync(CancellationToken cancellationToken);
+    Task ResetAsync(CancellationToken cancellationToken);
+}
+
+public interface ICompletionNoticeStore
+{
+    Task<IReadOnlyList<CompletionNotice>> GetAllAsync(CancellationToken cancellationToken);
+    Task SaveAsync(CompletionNotice notice, CancellationToken cancellationToken);
+    Task DismissAsync(Guid noticeId, CancellationToken cancellationToken);
+    Task ClearAsync(CancellationToken cancellationToken);
+}
+
+public interface IShellProgressService
+{
+    void Attach(nint windowHandle);
+    void SetProgress(ShellProgressState state, int? percent = null);
+    void RequestAttention();
+    bool IsForeground();
+}
+
+public interface IClock
+{
+    DateTimeOffset Now { get; }
+}

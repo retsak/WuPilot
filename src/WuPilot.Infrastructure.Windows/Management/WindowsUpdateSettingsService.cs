@@ -26,6 +26,8 @@ public sealed class WindowsUpdateSettingsService(string? auditPath = null) : IWi
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (requested.Select(static change => change.PolicyId).Distinct(StringComparer.OrdinalIgnoreCase).Count() != requested.Length)
+                throw new ArgumentException("A settings batch cannot contain the same policy more than once.", nameof(changes));
             var definitions = requested.Select(change =>
                 PolicyCatalog.All.FirstOrDefault(item => item.Id == change.PolicyId) ??
                 throw new ArgumentException($"Unknown policy: {change.PolicyId}.")).ToArray();
@@ -34,6 +36,24 @@ public sealed class WindowsUpdateSettingsService(string? auditPath = null) : IWi
             var batchId = Guid.NewGuid();
             var build = ReadBuild().ToString(CultureInfo.InvariantCulture);
             var sid = WindowsIdentity.GetCurrent().User?.Value ?? "unknown";
+            var issues = new List<SettingChangeIssue>();
+            for (var index = 0; index < requested.Length; index++)
+            {
+                if (!CanWrite(definitions[index]))
+                    issues.Add(new(definitions[index].Id, "view-only", $"{definitions[index].DisplayName} is view-only on this Windows build."));
+                var current = Format(ReadRaw(definitions[index]).Value);
+                if (requested[index].EnforceExpectedRequestedValue &&
+                    !string.Equals(current, requested[index].ExpectedRequestedValue, StringComparison.OrdinalIgnoreCase))
+                    issues.Add(new(definitions[index].Id, "drift", $"{definitions[index].DisplayName} changed after it was staged."));
+            }
+            if (issues.Count > 0)
+            {
+                var summary = string.Join(" ", issues.Select(static issue => issue.Message));
+                var entry = new SettingAuditEntry(Guid.NewGuid(), batchId, DateTimeOffset.Now, "batch", "Settings batch", null, null, null,
+                    PolicyOwnership.Local, build, sid, false, false, $"Validation stopped: {summary}");
+                await AppendAuditAsync([entry], cancellationToken).ConfigureAwait(false);
+                return new(batchId, false, summary, ReadSnapshot().Policies, [entry], issues);
+            }
             var originals = new List<(PolicyDefinition Definition, object? Value, RegistryValueKind Kind, bool Existed)>();
             var audit = new List<SettingAuditEntry>();
             try
@@ -42,7 +62,6 @@ public sealed class WindowsUpdateSettingsService(string? auditPath = null) : IWi
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var definition = definitions[index];
-                    if (!CanWrite(definition)) throw new InvalidOperationException($"{definition.DisplayName} is view-only on this Windows build.");
                     var original = ReadRaw(definition);
                     originals.Add((definition, original.Value, original.Kind, original.Existed));
                     Write(definition, requested[index]);

@@ -38,14 +38,22 @@ public sealed record SettingsSnapshot(
     int WindowsBuild,
     IReadOnlyList<PolicyState> Policies);
 
-public sealed record SettingChange(string PolicyId, string? Value, bool Remove = false);
+public sealed record SettingChange(
+    string PolicyId,
+    string? Value,
+    bool Remove = false,
+    string? ExpectedRequestedValue = null,
+    bool EnforceExpectedRequestedValue = false);
 
 public sealed record SettingChangeResult(
     Guid BatchId,
     bool Succeeded,
     string Summary,
     IReadOnlyList<PolicyState> States,
-    IReadOnlyList<SettingAuditEntry> AuditEntries);
+    IReadOnlyList<SettingAuditEntry> AuditEntries,
+    IReadOnlyList<SettingChangeIssue>? Issues = null);
+
+public sealed record SettingChangeIssue(string PolicyId, string Code, string Message);
 
 public sealed record SettingAuditEntry(
     Guid Id,

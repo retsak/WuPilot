@@ -4,7 +4,7 @@ param(
     [string] $Platform = 'x64',
 
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string] $Version = '0.2.0',
+    [string] $Version = '0.3.0',
 
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Release',

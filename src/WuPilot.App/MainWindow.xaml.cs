@@ -5,10 +5,14 @@ using System.Reflection;
 using System.Security.Principal;
 using System.Runtime.CompilerServices;
 using Microsoft.Win32;
+using Microsoft.UI.Input;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.System;
 using WuPilot.Core.Abstractions;
 using WuPilot.Core.Models;
 using WuPilot.Core.Services;
@@ -35,6 +39,10 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private readonly IDeliveryOptimizationService _deliveryOptimizationService;
     private readonly IOperationMetricStore _metricStore;
     private readonly IAppUpdateService _appUpdateService;
+    private readonly IAppPreferencesStore _preferencesStore;
+    private readonly ICompletionNoticeStore _completionNoticeStore;
+    private readonly IShellProgressService _shellProgressService;
+    private readonly IClock _clock;
     private readonly List<UpdateListItem> _allUpdates = [];
     private readonly List<DiagnosticFindingItem> _allDiagnosticFindings = [];
     private readonly List<UpdateHistoryItem> _allUpdateHistory = [];
@@ -48,6 +56,16 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private UpdateListItem? _selectedUpdate;
     private bool _isBusy;
     private bool _profilesLoaded;
+    private bool _isRestoringPreferences;
+    private bool _operationFailed;
+    private bool _closeAfterOperation;
+    private bool _allowClose;
+    private bool _windowIsActive = true;
+    private bool _closePromptOpen;
+    private string _currentPageTag = "scan";
+    private OperationStatus? _operationStatus;
+    private AppPreferences _preferences = AppPreferences.Default;
+    private readonly DispatcherTimer _elapsedTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly bool _isAdministrator;
     private string _resultSummary = "No scan yet";
 
@@ -67,6 +85,9 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     public ObservableCollection<PolicyStateItem> VisiblePolicies { get; } = [];
     public ObservableCollection<SettingAuditItem> SettingsAudit { get; } = [];
     public ObservableCollection<OperationMetricItem> VisibleMetrics { get; } = [];
+    public ObservableCollection<PolicyChoiceItem> PolicyChoices { get; } = [];
+    public ObservableCollection<StagedPolicyChangeItem> PolicyChangeCart { get; } = [];
+    public ObservableCollection<CompletionNoticeItem> CompletionNotices { get; } = [];
     public ObservableCollection<UpdateHistoryItem> UpdateHistory { get; } = [];
     public ObservableCollection<UpdateHistoryItem> VisibleUpdateHistory { get; } = [];
     public ObservableCollection<string> ActivityItems { get; } = [];
@@ -112,6 +133,14 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         _deliveryOptimizationService = new DeliveryOptimizationService();
         _metricStore = new JsonOperationMetricStore();
         _appUpdateService = new GitHubAppUpdateService();
+        _preferencesStore = new JsonAppPreferencesStore();
+        _completionNoticeStore = new JsonCompletionNoticeStore();
+        _shellProgressService = new WindowsShellProgressService();
+        _clock = new SystemClock();
+        AppWindow.Closing += AppWindow_Closing;
+        AppWindow.Changed += AppWindow_Changed;
+        Activated += MainWindow_Activated;
+        _elapsedTimer.Tick += ElapsedTimer_Tick;
 
         foreach (var provider in UpdateProviderDefinition.BuiltIn)
         {
@@ -154,8 +183,13 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         _profilesLoaded = true;
         try
         {
+            try { _shellProgressService.Attach(WinRT.Interop.WindowNative.GetWindowHandle(this)); }
+            catch (Exception exception) { Log($"Taskbar progress is unavailable: {exception.Message}"); }
+            _preferences = await _preferencesStore.GetAsync(CancellationToken.None);
+            ApplyPreferences(_preferences);
             await ReloadProfilesAsync();
             await ReloadWatchlistAsync();
+            await ReloadCompletionNoticesAsync();
             _ = CheckForAppUpdateAsync(force: false);
         }
         catch (Exception exception)
@@ -163,6 +197,73 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             Log($"Saved profiles could not be loaded: {exception.Message}");
             StatusText.Text = "Saved profiles unavailable";
         }
+    }
+
+    private void ApplyPreferences(AppPreferences preferences)
+    {
+        _isRestoringPreferences = true;
+        try
+        {
+            var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
+            var work = area.WorkArea;
+            var placement = WindowPlacementValidator.Clamp(preferences.Window, work.X, work.Y, work.Width, work.Height);
+            AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(placement.X, placement.Y, placement.Width, placement.Height));
+            if (placement.IsMaximized && AppWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
+            RootGrid.RequestedTheme = preferences.Theme switch { "Light" => ElementTheme.Light, "Dark" => ElementTheme.Dark, _ => ElementTheme.Default };
+            Navigation.IsPaneOpen = preferences.NavigationPaneOpen;
+            foreach (var provider in ProviderOptions) provider.IsSelected = preferences.ScanProviderIds?.Contains(provider.Provider.Id, StringComparer.OrdinalIgnoreCase) == true;
+            PresetCombo.SelectedItem = PresetOptions.FirstOrDefault(item => item.Value.ToString() == preferences.ScanPreset) ?? PresetOptions[2];
+            CustomServiceIdBox.Text = preferences.CustomServiceId;
+            OfflineCabPathBox.Text = preferences.OfflineCatalogPath;
+            CustomCriteriaBox.Text = preferences.CustomCriteria;
+            SupersededCheck.IsChecked = preferences.IncludeSuperseded;
+            ResultFilterCombo.SelectedItem = ResultFilterOptions.FirstOrDefault(item => item.Value.ToString() == preferences.ResultFilter) ?? ResultFilterOptions[0];
+            ResultSortCombo.SelectedItem = ResultSortOptions.FirstOrDefault(item => item.Value.ToString() == preferences.ResultSort) ?? ResultSortOptions[0];
+            PerformanceRangeCombo.SelectedItem = PerformanceRangeCombo.Items.OfType<ComboBoxItem>().FirstOrDefault(item => Convert.ToString(item.Tag) == preferences.PerformanceRangeDays.ToString());
+            PolicyFilterBox.Text = preferences.PolicySearch;
+            ShowLegacyPolicyCheck.IsChecked = preferences.ShowLegacyPolicies;
+            TaskbarAttentionToggle.IsOn = preferences.FlashTaskbarOnCompletion;
+            NavigateTo(preferences.NavigationTag);
+        }
+        finally { _isRestoringPreferences = false; }
+    }
+
+    private AppPreferences CapturePreferences()
+    {
+        var position = AppWindow.Position;
+        var size = AppWindow.Size;
+        var maximized = AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Maximized };
+        return _preferences with
+        {
+            Window = new(position.X, position.Y, size.Width, size.Height, maximized),
+            NavigationTag = _currentPageTag,
+            NavigationPaneOpen = Navigation.IsPaneOpen,
+            Theme = RootGrid.RequestedTheme switch { ElementTheme.Light => "Light", ElementTheme.Dark => "Dark", _ => "System" },
+            ScanProviderIds = ProviderOptions.Where(static item => item.IsSelected).Select(static item => item.Provider.Id).ToArray(),
+            ScanPreset = (PresetCombo.SelectedItem as ScanPresetOption)?.Value.ToString() ?? "MissingDrivers",
+            CustomServiceId = CustomServiceIdBox.Text ?? string.Empty,
+            OfflineCatalogPath = OfflineCabPathBox.Text ?? string.Empty,
+            CustomCriteria = CustomCriteriaBox.Text ?? string.Empty,
+            IncludeSuperseded = SupersededCheck.IsChecked == true,
+            ResultFilter = (ResultFilterCombo.SelectedItem as ResultFilterOption)?.Value.ToString() ?? "All",
+            ResultSort = (ResultSortCombo.SelectedItem as ResultSortOption)?.Value.ToString() ?? "Default",
+            PerformanceRangeDays = SelectedPerformanceDays(),
+            PolicySearch = PolicyFilterBox.Text ?? string.Empty,
+            PolicyCategory = SelectedComboTag(PolicyCategoryCombo),
+            PolicyOwnership = SelectedComboTag(PolicyOwnershipCombo),
+            PolicyRisk = SelectedComboTag(PolicyRiskCombo),
+            PolicyStateFilter = SelectedComboTag(PolicyStateFilterCombo),
+            ShowLegacyPolicies = ShowLegacyPolicyCheck.IsChecked == true,
+            FavoritePolicyIds = _allPolicyStates.Where(static item => item.IsFavorite).Select(static item => item.State.Definition.Id).ToArray(),
+            FlashTaskbarOnCompletion = TaskbarAttentionToggle.IsOn
+        };
+    }
+
+    private void SavePreferencesSoon()
+    {
+        if (_isRestoringPreferences || !_profilesLoaded) return;
+        _preferences = CapturePreferences();
+        _preferencesStore.ScheduleSave(_preferences);
     }
 
     private async Task ReloadProfilesAsync(Guid? selectedProfileId = null)
@@ -354,7 +455,10 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {
+        if (_operationStatus?.IsCancellable != true) return;
         _operationCancellation?.Cancel();
+        if (_operationStatus is not null) _operationStatus = _operationStatus with { State = OperationRunState.CancellationRequested };
+        _shellProgressService.SetProgress(ShellProgressState.Paused, _operationStatus?.Percent);
         StatusText.Text = "Cancellation requested; waiting for the current WUA call…";
     }
 
@@ -372,7 +476,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (_isBusy) return;
         if (_scanReport is null) return;
-        SetBusy(true, "Creating evidence bundle…");
+        SetBusy(true, "Creating evidence bundle…", cancellable: false);
         try
         {
             var selectedUpdates = selection?.ToArray();
@@ -603,9 +707,9 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         DetailWarning.IsOpen = update.IsDriver;
     }
 
-    private void FilterBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyFilter();
-    private void ResultFilter_SelectionChanged(object sender, SelectionChangedEventArgs e) => ApplyFilter();
-    private void ResultSort_SelectionChanged(object sender, SelectionChangedEventArgs e) => ApplyFilter();
+    private void FilterBox_TextChanged(object sender, TextChangedEventArgs e) { ApplyFilter(); SavePreferencesSoon(); }
+    private void ResultFilter_SelectionChanged(object sender, SelectionChangedEventArgs e) { ApplyFilter(); SavePreferencesSoon(); }
+    private void ResultSort_SelectionChanged(object sender, SelectionChangedEventArgs e) { ApplyFilter(); SavePreferencesSoon(); }
 
     private void ClearResultFilters_Click(object sender, RoutedEventArgs e)
     {
@@ -804,6 +908,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             _ => ElementTheme.Default
         };
         StatusText.Text = $"Theme: {theme}";
+        SavePreferencesSoon();
     }
 
     private void DiagnosticFilter_Changed(object sender, RoutedEventArgs e) => ApplyDiagnosticFilter();
@@ -1030,6 +1135,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         CustomCriteriaBox.Visibility = PresetCombo.SelectedItem is ScanPresetOption { Value: ScanPreset.Custom }
             ? Visibility.Visible
             : Visibility.Collapsed;
+        SavePreferencesSoon();
     }
 
     private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -1042,6 +1148,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ShowView(string tag)
     {
+        _currentPageTag = tag;
         ScanView.Visibility = tag == "scan" ? Visibility.Visible : Visibility.Collapsed;
         CompareView.Visibility = tag == "compare" ? Visibility.Visible : Visibility.Collapsed;
         WatchlistView.Visibility = tag == "watchlist" ? Visibility.Visible : Visibility.Collapsed;
@@ -1054,6 +1161,14 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         AboutView.Visibility = tag == "about" ? Visibility.Visible : Visibility.Collapsed;
         if (tag == "controls" && _allPolicyStates.Count == 0) _ = RefreshSettingsAsync();
         if (tag == "performance") _ = RefreshPerformanceAsync();
+        SavePreferencesSoon();
+    }
+
+    private void NavigateTo(string tag)
+    {
+        var item = Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(candidate => string.Equals(candidate.Tag as string, tag, StringComparison.Ordinal));
+        if (item is not null) Navigation.SelectedItem = item;
+        ShowView(item is null ? "scan" : tag);
     }
 
     private void UpdateScanInsights(ScanReport report)
@@ -1165,7 +1280,9 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         {
             var snapshot = await _settingsService.GetSnapshotAsync(CancellationToken.None);
             _allPolicyStates.Clear();
-            _allPolicyStates.AddRange(snapshot.Policies.Select(static state => new PolicyStateItem(state)));
+            var favorites = _preferences.FavoritePolicyIds ?? Array.Empty<string>();
+            _allPolicyStates.AddRange(snapshot.Policies.Select(state => new PolicyStateItem(state, favorites.Contains(state.Definition.Id))));
+            EnsurePolicyCategoryOptions();
             var audit = await _settingsService.GetAuditAsync(CancellationToken.None);
             Replace(SettingsAudit, audit.Take(25).Select(static entry => new SettingAuditItem(entry)));
             ApplyPolicyFilter();
@@ -1178,21 +1295,50 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void PolicyFilter_Changed(object sender, RoutedEventArgs e) => ApplyPolicyFilter();
-    private void PolicyFilter_Changed(object sender, TextChangedEventArgs e) => ApplyPolicyFilter();
+    private void PolicyFilter_Changed(object sender, RoutedEventArgs e) { ApplyPolicyFilter(); SavePreferencesSoon(); }
+    private void PolicyFilter_Changed(object sender, TextChangedEventArgs e) { ApplyPolicyFilter(); SavePreferencesSoon(); }
+    private void PolicyFilterCombo_Changed(object sender, SelectionChangedEventArgs e) { ApplyPolicyFilter(); SavePreferencesSoon(); }
 
     private void ApplyPolicyFilter()
     {
+        if (PolicyFilterBox is null || PolicyCategoryCombo is null || PolicyOwnershipCombo is null ||
+            PolicyRiskCombo is null || PolicyStateFilterCombo is null || ShowLegacyPolicyCheck is null ||
+            VisiblePolicyCountText is null) return;
         var query = PolicyFilterBox.Text?.Trim();
         var showLegacy = ShowLegacyPolicyCheck.IsChecked == true;
+        var category = SelectedComboTag(PolicyCategoryCombo);
+        var ownership = SelectedComboTag(PolicyOwnershipCombo);
+        var risk = SelectedComboTag(PolicyRiskCombo);
+        var stateFilter = SelectedComboTag(PolicyStateFilterCombo);
         var filtered = _allPolicyStates.Where(item =>
             (showLegacy || item.State.IsSupported && !item.State.Definition.IsLegacy) &&
+            (category == "All" || item.Category == category) &&
+            (ownership == "All" || item.State.Ownership.ToString() == ownership) &&
+            (risk == "All" || item.State.Definition.Risk.ToString() == risk) &&
+            (stateFilter == "All" ||
+             stateFilter == "Editable" && item.State.CanEdit ||
+             stateFilter == "ViewOnly" && !item.State.CanEdit ||
+             stateFilter == "Different" && item.HasDifference ||
+             stateFilter == "Favorites" && item.IsFavorite) &&
             (string.IsNullOrWhiteSpace(query) ||
              item.DisplayName.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
              item.Category.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
              item.ValueLabel.Contains(query, StringComparison.CurrentCultureIgnoreCase)));
         Replace(VisiblePolicies, filtered.OrderBy(static item => item.Category).ThenBy(static item => item.DisplayName));
         VisiblePolicyCountText.Text = $"{VisiblePolicies.Count} shown";
+    }
+
+    private void EnsurePolicyCategoryOptions()
+    {
+        var selected = _preferences.PolicyCategory;
+        PolicyCategoryCombo.Items.Clear();
+        PolicyCategoryCombo.Items.Add(new ComboBoxItem { Content = "All categories", Tag = "All" });
+        foreach (var category in _allPolicyStates.Select(static item => item.Category).Distinct().OrderBy(static value => value))
+            PolicyCategoryCombo.Items.Add(new ComboBoxItem { Content = category, Tag = category });
+        SelectComboTag(PolicyCategoryCombo, string.IsNullOrWhiteSpace(selected) ? "All" : selected);
+        SelectComboTag(PolicyOwnershipCombo, _preferences.PolicyOwnership);
+        SelectComboTag(PolicyRiskCombo, _preferences.PolicyRisk);
+        SelectComboTag(PolicyStateFilterCombo, _preferences.PolicyStateFilter);
     }
 
     private void PolicyList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1203,24 +1349,35 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
         PolicyDetailTitle.Text = item.DisplayName;
-        PolicyDetailStatus.Text = $"{item.Description}\n\nCurrent: {item.ValueLabel}\nOwner: {item.OwnershipLabel}\n{item.Status}";
-        PolicyValueBox.Text = item.State.RequestedValue ?? string.Empty;
-        PolicyValueBox.PlaceholderText = item.State.Definition.Choices is null
-            ? "Enter the documented value"
-            : string.Join(" · ", item.State.Definition.Choices.Select(static pair => $"{pair.Key}={pair.Value}"));
+        PolicyDetailStatus.Text = $"{item.Description}\n\nRequested: {item.RequestedLabel}\nEffective: {item.ValueLabel}\nOwner: {item.OwnershipLabel} · Risk: {item.RiskLabel}\n" +
+            $"{(item.State.Definition.RequiresRestart ? "Restart required after change. " : "Policy refresh/readback required. ")}{item.Status}";
+        ConfigurePolicyEditor(item.State);
+        PolicyDocumentationLink.NavigateUri = TryHttpUri(item.State.Definition.DocumentationUrl, out var docs) ? docs : null;
+        PolicyDocumentationLink.Visibility = PolicyDocumentationLink.NavigateUri is null ? Visibility.Collapsed : Visibility.Visible;
         ApplyPolicyButton.IsEnabled = ClearPolicyButton.IsEnabled = item.State.CanEdit;
     }
 
     private async void ApplyPolicy_Click(object sender, RoutedEventArgs e)
     {
         if (PolicyList.SelectedItem is not PolicyStateItem item) return;
-        await ApplySettingChangesAsync([new(item.State.Definition.Id, PolicyValueBox.Text)], item.State.Definition.Risk);
+        try
+        {
+            StagePolicyChange(item, ReadPolicyEditorValue(item.State.Definition), false);
+            PolicyValidationInfo.IsOpen = false;
+        }
+        catch (Exception exception)
+        {
+            PolicyValidationInfo.Message = exception.Message;
+            PolicyValidationInfo.IsOpen = true;
+        }
+        await Task.CompletedTask;
     }
 
     private async void ClearPolicy_Click(object sender, RoutedEventArgs e)
     {
         if (PolicyList.SelectedItem is not PolicyStateItem item) return;
-        await ApplySettingChangesAsync([new(item.State.Definition.Id, null, Remove: true)], item.State.Definition.Risk);
+        StagePolicyChange(item, null, true);
+        await Task.CompletedTask;
     }
 
     private async void QuickToggle_Click(object sender, RoutedEventArgs e)
@@ -1232,34 +1389,141 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             await ShowMessageAsync("Control unavailable", state?.Status ?? "Refresh settings before using quick controls.");
             return;
         }
-        await ApplySettingChangesAsync([new(id, state.State.EffectiveValue == "1" ? "0" : "1")], state.State.Definition.Risk);
+        StagePolicyChange(state, state.State.EffectiveValue == "1" ? "0" : "1", false);
+        StatusText.Text = $"{state.DisplayName} staged. Review the change cart.";
     }
 
     private async void PauseUpdates_Click(object sender, RoutedEventArgs e)
     {
         var today = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-        await ApplySettingChangesAsync([new("update.pause-quality-start", today), new("update.pause-feature-start", today)], PolicyRisk.Elevated);
+        foreach (var id in new[] { "update.pause-quality-start", "update.pause-feature-start" })
+            if (_allPolicyStates.FirstOrDefault(item => item.State.Definition.Id == id) is { } state) StagePolicyChange(state, today, false);
+        await Task.CompletedTask;
     }
 
-    private async void ResumeUpdates_Click(object sender, RoutedEventArgs e) =>
-        await ApplySettingChangesAsync([new("update.pause-quality-start", null, true), new("update.pause-feature-start", null, true)], PolicyRisk.Elevated);
+    private async void ResumeUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var id in new[] { "update.pause-quality-start", "update.pause-feature-start" })
+            if (_allPolicyStates.FirstOrDefault(item => item.State.Definition.Id == id) is { } state) StagePolicyChange(state, null, true);
+        await Task.CompletedTask;
+    }
 
-    private async Task ApplySettingChangesAsync(IReadOnlyList<SettingChange> changes, PolicyRisk risk)
+    private async Task<bool> ApplySettingChangesAsync(IReadOnlyList<SettingChange> changes, PolicyRisk risk)
     {
         var warning = risk == PolicyRisk.High
             ? "This can change update sources, safeguards, or user access. A bad value can prevent updates."
             : "This writes elevated device-local Windows Update policy or Settings state. Domain or MDM policy may overwrite it.";
-        if (!await ConfirmAsync("Apply Windows Update setting?", $"{warning}\n\nWuPilot will journal the previous value, verify readback, and roll back the batch if any write fails.")) return;
-        SetBusy(true, "Applying and verifying settings…");
+        if (!await ConfirmAsync("Apply Windows Update settings?", $"{warning}\n\n{changes.Count} staged change(s) will be journaled, verified as one transaction, and rolled back together if any write fails.")) return false;
+        SetBusy(true, "Applying and verifying settings…", cancellable: false);
         try
         {
             var result = await _settingsService.ApplyAsync(changes, CancellationToken.None);
             Log($"Settings batch {result.BatchId}: {result.Summary}");
             await RefreshSettingsAsync();
             await ShowMessageAsync(result.Succeeded ? "Settings applied" : "Settings rolled back", result.Summary);
+            return result.Succeeded;
         }
-        catch (Exception exception) { await ShowMessageAsync("Settings change failed", exception.Message); }
+        catch (Exception exception) { await ShowMessageAsync("Settings change failed", exception.Message); return false; }
         finally { SetBusy(false, "Ready"); }
+    }
+
+    private void ConfigurePolicyEditor(PolicyState state)
+    {
+        PolicyValidationInfo.IsOpen = false;
+        PolicyBooleanEditor.Visibility = PolicyChoiceEditor.Visibility = PolicyNumberEditor.Visibility =
+            PolicyDateEditor.Visibility = PolicyValueBox.Visibility = Visibility.Collapsed;
+        var definition = state.Definition;
+        switch (definition.ValueKind)
+        {
+            case PolicyValueKind.Boolean:
+                PolicyBooleanEditor.Visibility = Visibility.Visible;
+                PolicyBooleanEditor.IsOn = state.RequestedValue == "1";
+                break;
+            case PolicyValueKind.Choice:
+                PolicyChoices.Clear();
+                foreach (var choice in definition.Choices ?? new Dictionary<string, string>())
+                    PolicyChoices.Add(new(choice.Key, choice.Value));
+                PolicyChoiceEditor.SelectedItem = PolicyChoices.FirstOrDefault(choice => choice.Value == state.RequestedValue) ?? PolicyChoices.FirstOrDefault();
+                PolicyChoiceEditor.Visibility = Visibility.Visible;
+                break;
+            case PolicyValueKind.Integer:
+                PolicyNumberEditor.Minimum = definition.Minimum ?? int.MinValue;
+                PolicyNumberEditor.Maximum = definition.Maximum ?? int.MaxValue;
+                PolicyNumberEditor.Value = double.TryParse(state.RequestedValue, out var number) ? number : definition.Minimum ?? 0;
+                PolicyNumberEditor.Visibility = Visibility.Visible;
+                break;
+            case PolicyValueKind.DateTime:
+                PolicyDateEditor.Date = DateTimeOffset.TryParse(state.RequestedValue, out var date) ? date : DateTimeOffset.Now;
+                PolicyDateEditor.Visibility = Visibility.Visible;
+                break;
+            default:
+                PolicyValueBox.Text = state.RequestedValue ?? string.Empty;
+                PolicyValueBox.Visibility = Visibility.Visible;
+                break;
+        }
+    }
+
+    private string? ReadPolicyEditorValue(PolicyDefinition definition)
+    {
+        var raw = definition.ValueKind switch
+        {
+            PolicyValueKind.Boolean => PolicyBooleanEditor.IsOn ? "1" : "0",
+            PolicyValueKind.Choice => (PolicyChoiceEditor.SelectedItem as PolicyChoiceItem)?.Value,
+            PolicyValueKind.Integer => double.IsNaN(PolicyNumberEditor.Value) ? null : ((int)PolicyNumberEditor.Value).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            PolicyValueKind.DateTime => PolicyDateEditor.Date?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            _ => PolicyValueBox.Text
+        };
+        return PolicyValueValidator.Normalize(definition, raw, false);
+    }
+
+    private void StagePolicyChange(PolicyStateItem item, string? value, bool remove)
+    {
+        var normalized = PolicyValueValidator.Normalize(item.State.Definition, value, remove);
+        var change = new StagedPolicyChange(item.State.Definition.Id, item.DisplayName, item.State.RequestedValue, normalized, remove,
+            item.State.Ownership, item.State.Definition.Risk, item.State.Definition.RequiresRestart,
+            item.State.Ownership is PolicyOwnership.Mdm or PolicyOwnership.GroupPolicy
+                ? "A management refresh may ignore or revert this local request."
+                : item.State.Status);
+        var existing = PolicyChangeCart.FirstOrDefault(entry => entry.Change.PolicyId == change.PolicyId);
+        if (existing is null) PolicyChangeCart.Add(new(change));
+        else PolicyChangeCart[PolicyChangeCart.IndexOf(existing)] = new(change);
+        StatusText.Text = $"{item.DisplayName} staged. No device setting has changed.";
+    }
+
+    private void FavoritePolicy_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: PolicyStateItem item }) return;
+        item.IsFavorite = !item.IsFavorite;
+        ApplyPolicyFilter();
+        SavePreferencesSoon();
+    }
+
+    private async void ApplyPolicyCart_Click(object sender, RoutedEventArgs e)
+    {
+        if (PolicyChangeCart.Count == 0)
+        {
+            await ShowMessageAsync("Change cart is empty", "Stage one or more editable policies first.");
+            return;
+        }
+        var changes = PolicyChangeCart.Select(entry => new SettingChange(entry.Change.PolicyId, entry.Change.AfterValue,
+            entry.Change.Remove, entry.Change.BeforeValue, EnforceExpectedRequestedValue: true)).ToArray();
+        var risk = PolicyChangeCart.Max(static entry => entry.Change.Risk);
+        if (await ApplySettingChangesAsync(changes, risk)) PolicyChangeCart.Clear();
+    }
+
+    private void RemovePolicyCartItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (PolicyChangeCartList.SelectedItem is StagedPolicyChangeItem selected) PolicyChangeCart.Remove(selected);
+    }
+
+    private void ClearPolicyCart_Click(object sender, RoutedEventArgs e) => PolicyChangeCart.Clear();
+
+    private void CopyAuditDetails_Click(object sender, RoutedEventArgs e)
+    {
+        if (SettingsAuditList.SelectedItem is not SettingAuditItem selected) return;
+        var entry = selected.Entry;
+        CopyText($"{entry.ChangedAt:O}\n{entry.DisplayName} ({entry.PolicyId})\nBefore: {entry.BeforeValue ?? "Windows default"}\nAfter: {entry.AfterValue ?? "Windows default"}\nVerified: {entry.VerifiedValue ?? "Windows default"}\nOwner: {entry.Ownership}\nResult: {entry.Message}");
+        StatusText.Text = "Audit details copied";
     }
 
     private async void ExportSettingsAudit_Click(object sender, RoutedEventArgs e)
@@ -1290,6 +1554,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private async void PerformanceRange_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (!_profilesLoaded) return;
+        SavePreferencesSoon();
         await RefreshPerformanceAsync();
     }
 
@@ -1335,7 +1600,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             }
             AppUpdateStatusText.Text = $"{release.Name} is available.";
             if (!await ConfirmAsync("WuPilot update available", $"{release.Name}\nPublished {release.PublishedAt:g}\n{release.Size / 1024d / 1024d:0.0} MB\n\n{release.Notes}\n\nDownload and verify the {RuntimeArchitectureLabel()} installer?")) return;
-            SetBusy(true, "Downloading WuPilot update…");
+            SetBusy(true, "Downloading WuPilot update…", cancellable: false);
             var downloaded = await _appUpdateService.DownloadAsync(release, CreateProgress(), CancellationToken.None);
             var signatureWarning = downloaded.IsAuthenticodeSigned
                 ? "The Authenticode signature is valid."
@@ -1370,20 +1635,54 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
         StatusText.Text = progress.Message;
         ProgressText.Text = progress.Percent is null ? progress.Stage : $"{progress.Stage} · {progress.Percent}%";
+        GlobalProgressBar.IsIndeterminate = progress.Percent is null;
+        if (progress.Percent is not null) GlobalProgressBar.Value = progress.Percent.Value;
+        _shellProgressService.SetProgress(progress.Percent is null ? ShellProgressState.Indeterminate : ShellProgressState.Normal, progress.Percent);
+        if (_operationStatus is not null)
+            _operationStatus = _operationStatus with { Stage = progress.Stage, Message = progress.Message, Percent = progress.Percent, Elapsed = _clock.Now - _operationStatus.StartedAt };
     });
 
-    private void SetBusy(bool busy, string status)
+    private void SetBusy(bool busy, string status, bool cancellable = true)
     {
+        var wasBusy = _isBusy;
         _isBusy = busy;
         BusyRing.IsActive = busy;
         ScanButton.IsEnabled = !busy;
         CancelButton.IsEnabled = busy;
+        GlobalCancelButton.IsEnabled = busy && cancellable;
         StatusText.Text = status;
-        if (!busy) ProgressText.Text = string.Empty;
+        if (busy && !wasBusy)
+        {
+            _operationFailed = false;
+            _operationStatus = new(Guid.NewGuid(), status.TrimEnd('…', '.'), _currentPageTag, "Starting", status, null,
+                _clock.Now, TimeSpan.Zero, cancellable, OperationRunState.Running);
+            OperationOriginText.Text = $"From: {ReadablePage(_currentPageTag)}";
+            GlobalProgressBar.IsIndeterminate = true;
+            _shellProgressService.SetProgress(ShellProgressState.Indeterminate);
+            _elapsedTimer.Start();
+        }
+        else if (!busy && wasBusy)
+        {
+            _elapsedTimer.Stop();
+            GlobalProgressBar.IsIndeterminate = false;
+            GlobalProgressBar.Value = 0;
+            ProgressText.Text = string.Empty;
+            ElapsedText.Text = string.Empty;
+            OperationOriginText.Text = string.Empty;
+            var state = _operationCancellation?.IsCancellationRequested == true ? OperationRunState.Cancelled :
+                _operationFailed ? OperationRunState.Failed : OperationRunState.Succeeded;
+            if (_operationStatus is not null) _ = CompleteOperationAsync(_operationStatus with { State = state, Elapsed = _clock.Now - _operationStatus.StartedAt });
+            _operationStatus = null;
+            if (_closeAfterOperation) { _allowClose = true; Close(); }
+        }
     }
 
     private async Task ShowMessageAsync(string title, string message)
     {
+        if (_isBusy && (title.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
+                        title.Contains("rolled back", StringComparison.OrdinalIgnoreCase) ||
+                        title.Contains("stopped", StringComparison.OrdinalIgnoreCase)))
+            _operationFailed = true;
         var dialog = new ContentDialog
         {
             XamlRoot = RootGrid.XamlRoot,
@@ -1393,6 +1692,216 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         };
         await dialog.ShowAsync();
     }
+
+    private async Task CompleteOperationAsync(OperationStatus operation)
+    {
+        var severity = operation.State switch
+        {
+            OperationRunState.Failed => CompletionSeverity.Error,
+            OperationRunState.Cancelled => CompletionSeverity.Warning,
+            _ => CompletionSeverity.Success
+        };
+        var notice = new CompletionNotice(Guid.NewGuid(), _clock.Now,
+            operation.State == OperationRunState.Succeeded ? $"{operation.Operation} completed" :
+            operation.State == OperationRunState.Cancelled ? $"{operation.Operation} cancelled" : $"{operation.Operation} failed",
+            $"{FormatDuration(operation.Elapsed)} · {operation.Message}", operation.OriginatingPage, severity);
+        await _completionNoticeStore.SaveAsync(notice, CancellationToken.None);
+        await ReloadCompletionNoticesAsync();
+        _shellProgressService.SetProgress(operation.State == OperationRunState.Failed ? ShellProgressState.Error : ShellProgressState.None);
+        if (_preferences.FlashTaskbarOnCompletion && !_shellProgressService.IsForeground()) _shellProgressService.RequestAttention();
+    }
+
+    private async Task ReloadCompletionNoticesAsync()
+    {
+        var notices = await _completionNoticeStore.GetAllAsync(CancellationToken.None);
+        Replace(CompletionNotices, notices.Select(static notice => new CompletionNoticeItem(notice)));
+        CompletionEmptyText.Visibility = CompletionNotices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        CompletionButton.Content = CompletionNotices.Count == 0 ? "Notices" : $"Notices ({CompletionNotices.Count})";
+    }
+
+    private void ElapsedTimer_Tick(object? sender, object e)
+    {
+        if (_operationStatus is null) return;
+        var elapsed = _clock.Now - _operationStatus.StartedAt;
+        _operationStatus = _operationStatus with { Elapsed = elapsed };
+        ElapsedText.Text = FormatDuration(elapsed);
+    }
+
+    private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
+    {
+        if (args.DidPositionChange || args.DidSizeChange || args.DidPresenterChange) SavePreferencesSoon();
+    }
+
+    private void MainWindow_Activated(object sender, WindowActivatedEventArgs args) =>
+        _windowIsActive = args.WindowActivationState != WindowActivationState.Deactivated;
+
+    private async void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        if (_allowClose) return;
+        args.Cancel = true;
+        if (_closePromptOpen) return;
+        if (_isBusy)
+        {
+            _closePromptOpen = true;
+            try
+            {
+                var dialog = new ContentDialog
+                {
+                    XamlRoot = RootGrid.XamlRoot,
+                    Title = "An operation is still running",
+                    Content = "WuPilot will not terminate Windows Update Agent or repair work in the middle of a call. Keep WuPilot open, or request cancellation and close after the current safe boundary returns.",
+                    PrimaryButtonText = _operationStatus?.IsCancellable == true ? "Request cancellation" : "Close when finished",
+                    CloseButtonText = "Keep running",
+                    DefaultButton = ContentDialogButton.Close
+                };
+                if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+                {
+                    _closeAfterOperation = true;
+                    if (_operationStatus?.IsCancellable == true)
+                    {
+                        _operationCancellation?.Cancel();
+                        _shellProgressService.SetProgress(ShellProgressState.Paused, _operationStatus.Percent);
+                        StatusText.Text = "Cancellation requested; WuPilot will close after the current call returns.";
+                    }
+                    else StatusText.Text = "WuPilot will close when the current operation finishes.";
+                }
+            }
+            finally { _closePromptOpen = false; }
+            return;
+        }
+        _preferences = CapturePreferences();
+        _preferencesStore.ScheduleSave(_preferences);
+        await _preferencesStore.FlushAsync(CancellationToken.None);
+        _allowClose = true;
+        Close();
+    }
+
+    private async void RootGrid_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        var control = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+        var shift = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+        if (control && e.Key is VirtualKey.Number1 or VirtualKey.Number2 or VirtualKey.Number3)
+        {
+            NavigateTo(e.Key == VirtualKey.Number1 ? "scan" : e.Key == VirtualKey.Number2 ? "controls" : "performance");
+            e.Handled = true;
+        }
+        else if (control && e.Key == VirtualKey.F)
+        {
+            FocusActiveSearch();
+            e.Handled = true;
+        }
+        else if (e.Key == VirtualKey.F5)
+        {
+            RefreshActivePage();
+            e.Handled = true;
+        }
+        else if (control && e.Key == VirtualKey.Enter && _currentPageTag == "scan" && !_isBusy)
+        {
+            Scan_Click(ScanButton, new RoutedEventArgs());
+            e.Handled = true;
+        }
+        else if (e.Key == VirtualKey.Escape && _isBusy && _operationStatus?.IsCancellable == true)
+        {
+            Cancel_Click(GlobalCancelButton, new RoutedEventArgs());
+            e.Handled = true;
+        }
+        else if (control && shift && e.Key == VirtualKey.E && _scanReport is not null)
+        {
+            await ExportAsync(null);
+            e.Handled = true;
+        }
+    }
+
+    private void FocusActiveSearch()
+    {
+        Control? control = _currentPageTag switch
+        {
+            "scan" => FilterBox,
+            "controls" => PolicyFilterBox,
+            "diagnostics" => DiagnosticFilterBox,
+            "history" => HistoryFilterBox,
+            _ => null
+        };
+        control?.Focus(FocusState.Keyboard);
+    }
+
+    private void RefreshActivePage()
+    {
+        if (_isBusy) return;
+        switch (_currentPageTag)
+        {
+            case "controls": _ = RefreshSettingsAsync(); break;
+            case "performance": _ = RefreshPerformanceAsync(); break;
+            case "diagnostics": Diagnostics_Click(RootGrid, new RoutedEventArgs()); break;
+            case "history": RefreshHistory_Click(RootGrid, new RoutedEventArgs()); break;
+            case "sources": RefreshSources_Click(RootGrid, new RoutedEventArgs()); break;
+            case "watchlist": _ = ReloadWatchlistAsync(); break;
+        }
+    }
+
+    private void CompletionButton_Click(object sender, RoutedEventArgs e) { }
+
+    private async void OpenCompletionNotice_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: CompletionNoticeItem item }) return;
+        NavigateTo(item.Notice.SourcePage);
+        await _completionNoticeStore.DismissAsync(item.Notice.Id, CancellationToken.None);
+        await ReloadCompletionNoticesAsync();
+        CompletionFlyout.Hide();
+        _shellProgressService.SetProgress(ShellProgressState.None);
+    }
+
+    private async void DismissCompletionNotice_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: CompletionNoticeItem item }) return;
+        await _completionNoticeStore.DismissAsync(item.Notice.Id, CancellationToken.None);
+        await ReloadCompletionNoticesAsync();
+        if (CompletionNotices.Count == 0) _shellProgressService.SetProgress(ShellProgressState.None);
+    }
+
+    private async void ClearCompletionNotices_Click(object sender, RoutedEventArgs e)
+    {
+        await _completionNoticeStore.ClearAsync(CancellationToken.None);
+        await ReloadCompletionNoticesAsync();
+        _shellProgressService.SetProgress(ShellProgressState.None);
+    }
+
+    private void TaskbarAttentionToggle_Toggled(object sender, RoutedEventArgs e) => SavePreferencesSoon();
+
+    private async void ResetPreferences_Click(object sender, RoutedEventArgs e)
+    {
+        if (!await ConfirmAsync("Reset saved layout and filters?", "This resets window placement, navigation, theme, workflow fields, filters, favorites, and notification preference. Scan results and device settings are not affected.")) return;
+        await _preferencesStore.ResetAsync(CancellationToken.None);
+        _preferences = AppPreferences.Default;
+        ApplyPreferences(_preferences);
+        foreach (var item in _allPolicyStates) item.IsFavorite = false;
+        ApplyPolicyFilter();
+        StatusText.Text = "Saved layout and filters reset";
+    }
+
+    private static string SelectedComboTag(ComboBox combo) =>
+        combo.SelectedItem is ComboBoxItem item ? Convert.ToString(item.Tag) ?? "All" : "All";
+
+    private static void SelectComboTag(ComboBox combo, string? tag)
+    {
+        combo.SelectedItem = combo.Items.OfType<ComboBoxItem>().FirstOrDefault(item =>
+            string.Equals(Convert.ToString(item.Tag), tag, StringComparison.OrdinalIgnoreCase)) ?? combo.Items.OfType<ComboBoxItem>().FirstOrDefault();
+    }
+
+    private int SelectedPerformanceDays() =>
+        PerformanceRangeCombo.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out var days) ? days : 30;
+
+    private static string ReadablePage(string tag) => tag switch
+    {
+        "scan" => "Scan and review",
+        "controls" => "Update controls",
+        "performance" => "Performance",
+        "diagnostics" => "Diagnostics",
+        "history" => "Update history",
+        "sources" => "Registered sources",
+        "watchlist" => "Watchlist",
+        _ => tag
+    };
 
     private void Log(string message)
     {

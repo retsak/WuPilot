@@ -84,15 +84,26 @@ public sealed partial class MainWindow
     private readonly ListView WatchlistList = null!;
     private readonly TextBlock ControlsSummaryText = null!;
     private readonly TextBox PolicyFilterBox = null!;
+    private readonly ComboBox PolicyCategoryCombo = null!;
+    private readonly ComboBox PolicyOwnershipCombo = null!;
+    private readonly ComboBox PolicyRiskCombo = null!;
+    private readonly ComboBox PolicyStateFilterCombo = null!;
     private readonly CheckBox ShowLegacyPolicyCheck = null!;
     private readonly TextBlock VisiblePolicyCountText = null!;
     private readonly ListView PolicyList = null!;
     private readonly TextBlock PolicyDetailTitle = null!;
     private readonly TextBlock PolicyDetailStatus = null!;
     private readonly TextBox PolicyValueBox = null!;
+    private readonly ToggleSwitch PolicyBooleanEditor = null!;
+    private readonly ComboBox PolicyChoiceEditor = null!;
+    private readonly NumberBox PolicyNumberEditor = null!;
+    private readonly CalendarDatePicker PolicyDateEditor = null!;
+    private readonly InfoBar PolicyValidationInfo = null!;
+    private readonly HyperlinkButton PolicyDocumentationLink = null!;
     private readonly Button ApplyPolicyButton = null!;
     private readonly Button ClearPolicyButton = null!;
     private readonly ListView SettingsAuditList = null!;
+    private readonly ListView PolicyChangeCartList = null!;
     private readonly ComboBox PerformanceRangeCombo = null!;
     private readonly TextBlock DoDownloadedText = null!;
     private readonly TextBlock DoSavingsText = null!;
@@ -101,9 +112,17 @@ public sealed partial class MainWindow
     private readonly TextBlock DoDetailText = null!;
     private readonly TextBlock PerformanceSummaryText = null!;
     private readonly TextBlock AppUpdateStatusText = null!;
+    private readonly ToggleSwitch TaskbarAttentionToggle = null!;
+    private readonly Button CompletionButton = null!;
+    private readonly Flyout CompletionFlyout = null!;
+    private readonly TextBlock CompletionEmptyText = null!;
     private readonly ProgressRing BusyRing = null!;
     private readonly TextBlock StatusText = null!;
     private readonly TextBlock ProgressText = null!;
+    private readonly TextBlock OperationOriginText = null!;
+    private readonly TextBlock ElapsedText = null!;
+    private readonly ProgressBar GlobalProgressBar = null!;
+    private readonly Button GlobalCancelButton = null!;
 
     private void InitializeComponent() { }
 }

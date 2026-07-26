@@ -27,6 +27,8 @@ The application uses the supported Windows Update Agent (WUA) COM API. Microsoft
 - Inspect and change more than 45 Windows Update and Delivery Optimization settings through an audited policy workbench with build gating, requested/effective state, transactional rollback, and MDM-aware ownership.
 - Review Delivery Optimization CDN, cache, peer, upload, and mode statistics alongside retained WuPilot download/install timings and clearly labeled Windows event estimates.
 - Check stable GitHub releases from the installed app, verify the architecture-specific installer against two SHA-256 sources, and start an in-place upgrade only after confirmation.
+- Restore the previous window, page, appearance, scan setup, and useful filters without reopening stale scan evidence or pending policy changes.
+- Follow long operations from any page through global progress, elapsed time, cancellable safe-close behavior, taskbar status, and a retained completion center.
 - Inspect every registered WUA source and reuse its service GUID for a custom read-only scan without registering or changing services.
 - Download, install, hide, or show one revalidated update with a confirmation. WuPilot never restarts the device automatically.
 - Diagnose update services, registered WUA sources, Windows Update/MDM policy registry values, WinHTTP proxy, Microsoft content DNS, WUA version/history, BITS jobs, disk space, Entra join identity, and pending restart state.
@@ -49,7 +51,7 @@ The installer supports in-place upgrades, uninstall through Windows Settings, au
 For unattended installation:
 
 ```powershell
-WuPilot-0.2.0-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+WuPilot-0.3.0-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 WuPilot requests administrator rights because some WUA methods, diagnostics, service controls, and repair tools require elevation.
@@ -68,7 +70,7 @@ cd WuPilot
 To build a distributable installer locally, install Inno Setup 7 and run:
 
 ```powershell
-./scripts/Build-WuPilotInstaller.ps1 -Platform x64 -Version 0.2.0
+./scripts/Build-WuPilotInstaller.ps1 -Platform x64 -Version 0.3.0
 ```
 
 Release and signing details are documented in [`docs/RELEASING.md`](docs/RELEASING.md).
@@ -112,6 +114,32 @@ Operation metrics are retained for up to 365 days or 5,000 entries under `%Local
 WuPilot checks `retsak/WuPilot` stable releases at most once every 24 hours while the app is running. It ignores drafts and prereleases, selects only the native x64 or ARM64 installer, and requires the downloaded SHA-256 to match both GitHub's asset digest and the release checksum sidecar. A signed installer must have a valid Authenticode status; an unsigned but hash-valid installer receives an additional warning. WuPilot never downloads or installs an update without confirmation.
 
 ![About page with stable release update check](docs/images/windows-validation-2026-07-25/about-0.2.0.png)
+
+### Workflow preferences and keyboard navigation
+
+WuPilot saves a versioned per-user workflow preference file under `%LocalAppData%\WuPilot`. It restores visible window placement, navigation page, theme, scan setup, result sort/filter, performance range, policy filters, favorites, and the taskbar-attention preference. Window coordinates are clamped to a visible monitor. Scan results, selected updates, technician notes, and staged policy changes are deliberately never restored.
+
+Use **Ctrl+1**, **Ctrl+2**, and **Ctrl+3** for Scan, Update controls, and Performance. **Ctrl+F** focuses the active page search, **F5** refreshes the active read-only page, **Ctrl+Enter** starts a scan, **Esc** requests supported cancellation, and **Ctrl+Shift+E** exports available evidence. Shortcuts never bypass a policy or update confirmation.
+
+![Performance page restored after relaunch](docs/images/windows-validation-2026-07-25/qol-restored-session.png)
+
+### Global operation progress and completion center
+
+Scanning, diagnostics, repair, export, update actions, and application downloads report their originating page, stage, percentage, and elapsed time in the global footer. The Windows taskbar mirrors determinate, indeterminate, paused, and failed states. Because WuPilot runs elevated and elevated Windows App SDK notifications are unsupported, completion notices stay in WuPilot and taskbar attention is used only when the window is not focused.
+
+Closing during an operation offers to keep running or request cancellation. WuPilot waits for the current safe WUA or repair boundary and never terminates a synchronous servicing call mid-operation.
+
+![Global diagnostics progress remains visible across navigation](docs/images/windows-validation-2026-07-25/qol-operation-progress.png)
+
+![Retained operation completion center](docs/images/windows-validation-2026-07-25/qol-completion-center.png)
+
+### Policy favorites and transactional change cart
+
+The policy workbench now includes persistent favorites, category/ownership/risk/state filters, requested-versus-effective filtering, and type-specific editors. Boolean, choice, bounded numeric, date, and text values are validated before staging. Quick controls stage changes as well.
+
+The session-only cart displays before/after values, risk, ownership, restart requirements, and management warnings. Applying the cart rechecks the requested values captured during staging and rejects drift before writing. The complete batch is still snapshotted, applied, verified, audited, and rolled back together on failure.
+
+![Typed policy editor and staged transactional change cart](docs/images/windows-validation-2026-07-25/qol-policy-cart.png)
 
 Use `-Platform ARM64` for native ARM64. The full release gate is documented in [`docs/WINDOWS-VALIDATION.md`](docs/WINDOWS-VALIDATION.md), and `scripts/Test-WuaReadOnly.ps1` provides a non-mutating WUA smoke test independent of the UI.
 

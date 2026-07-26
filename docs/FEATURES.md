@@ -192,6 +192,38 @@ Each row distinguishes:
 
 Quick controls mirror commonly used Windows Settings choices. Private UX values are labeled and available only on known Windows builds. MDM-only CSP values are read/export only because an elevated desktop app is not an MDM enrollment provider.
 
+### Policy workbench quality of life
+
+- Favorites persist per Windows user and can be isolated with the state filter.
+- Category, ownership, risk, editability, difference, and legacy filters combine with text search.
+- Each descriptor selects a boolean toggle, documented-choice picker, bounded number editor, date picker, or text editor.
+- Quick controls and selected-policy edits stage into a session-only cart; staging never writes Windows state.
+- The cart summarizes original/requested values, owner, risk, restart behavior, and management-policy warnings.
+- Apply checks that the requested value has not drifted since staging, then uses the existing all-or-rollback verified transaction.
+- Audit details are copyable; restoration keeps its current-value conflict protection.
+
+![Policy favorites, typed editor, and change cart](images/windows-validation-2026-07-25/qol-policy-cart.png)
+
+## Saved workflow state and navigation
+
+WuPilot atomically retains workflow preferences in `%LocalAppData%\WuPilot\app-preferences.json`. A corrupt file is moved aside and safe defaults are used. Writes are debounced, the schema is versioned, and reset is available from About.
+
+Restored state includes visible window placement, maximized state, page, navigation pane, theme, scan setup, filters/sort, performance range, policy filters, favorites, and taskbar-attention choice. Window placement is clamped to a current display. Cached scan results, update selections, technician notes, and pending policy-cart entries never survive a restart.
+
+Keyboard commands cover primary navigation, contextual search/refresh, starting a read-only scan, cancellation, and evidence export. A shortcut never performs an update action, policy write, or repair without the same confirmation used by its button.
+
+## Global operation progress
+
+The footer presents the active operation, originating page, stage, percent when known, elapsed time, and cancellation availability. Navigation remains available while serialized work runs. The taskbar reflects indeterminate, normal, paused, and failure states through an injectable Windows adapter.
+
+The completion center retains up to 50 notices for 30 days. Notices contain only operation summaries and link back to the originating page. When enabled, WuPilot flashes the taskbar only while unfocused; no service, tray process, startup agent, or notification helper is installed.
+
+Closing while busy never tears down a WUA or servicing call. WuPilot offers to keep running or request cancellation, and closes only after the operation returns to a safe boundary.
+
+![Global operation progress](images/windows-validation-2026-07-25/qol-operation-progress.png)
+
+![Completion center](images/windows-validation-2026-07-25/qol-completion-center.png)
+
 An apply operation validates the complete batch, records original value types and existence, writes each value, and verifies readback. Any failure restores all values already written by that batch. The durable audit contains OS build, user SID, before/after/verified values, ownership, and outcome. Restoration refuses to overwrite later drift unless conflict restoration is explicitly requested.
 
 ## Performance analytics

@@ -57,6 +57,12 @@ The portable policy catalog defines types, ranges, build applicability, risk, an
 
 Settings batches are all-or-rollback and always verify readback. MDM-only CSP state is never written locally. Private Windows Settings state is isolated and build-gated. Exact metrics come only from WuPilot's monotonic action timer; event-derived durations and cross-restart correlations carry lower confidence and their evidence source.
 
+### Workflow preferences and operation feedback
+
+Portable immutable models describe application preferences, window placement, operation state, completion notices, staged policy changes, and shell-progress state. Infrastructure owns atomic/debounced preference storage, completion retention, corrupt-file recovery, and Windows taskbar/attention interop. WinUI captures/restores view state, coordinates keyboard commands, renders global progress, and intercepts close requests.
+
+Preferences contain workflow configuration only. Scan evidence, technician notes, selected updates, and pending policy changes are excluded by design. The policy cart adds an expected-requested-value precondition so drift is rejected before a transactional registry batch begins.
+
 The updater has no background process. It uses a cached ETag and release response, checks at most daily while the application runs, chooses the current architecture, and fails closed unless GitHub's asset digest and sidecar checksum agree.
 
 ## Concurrency and cancellation
