@@ -20,7 +20,6 @@ public sealed class GitHubAppUpdateService(HttpClient? client = null, string? st
     public async Task<AppReleaseInfo?> CheckAsync(Version currentVersion, bool force, CancellationToken cancellationToken)
     {
         var state = await ReadStateAsync(cancellationToken).ConfigureAwait(false);
-        if (!force && state.LastCheckedAt > DateTimeOffset.Now.AddHours(-24)) return null;
         using var request = new HttpRequestMessage(HttpMethod.Get, LatestRelease);
         if (!force && !string.IsNullOrWhiteSpace(state.ETag)) request.Headers.TryAddWithoutValidation("If-None-Match", state.ETag);
         using var response = await _client.SendAsync(request, cancellationToken).ConfigureAwait(false);

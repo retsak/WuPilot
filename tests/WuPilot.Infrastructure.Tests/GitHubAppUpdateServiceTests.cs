@@ -46,13 +46,43 @@ public sealed class GitHubAppUpdateServiceTests
         Assert.Null(await service.CheckAsync(new Version(0, 2, 0), force: true, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Check_OnLaunchAlwaysContactsGitHubAndUsesCachedEtag()
+    {
+        const string json = """{"tag_name":"v0.2.0","name":"WuPilot","body":"","draft":false,"prerelease":false,"published_at":"2026-07-25T00:00:00Z","html_url":"https://github.com/retsak/WuPilot/releases/tag/v0.2.0","assets":[]}""";
+        var state = Path.Combine(Path.GetTempPath(), $"wupilot-update-{Guid.NewGuid():N}.json");
+        var handler = new StubHandler(json);
+        using var client = new HttpClient(handler);
+        try
+        {
+            var service = new GitHubAppUpdateService(client, state);
+            Assert.Null(await service.CheckAsync(new Version(0, 2, 0), force: false, CancellationToken.None));
+            Assert.Null(await service.CheckAsync(new Version(0, 2, 0), force: false, CancellationToken.None));
+
+            Assert.Equal(2, handler.RequestCount);
+            Assert.Null(handler.IfNoneMatchValues[0]);
+            Assert.Equal("\"test\"", handler.IfNoneMatchValues[1]);
+        }
+        finally
+        {
+            if (File.Exists(state)) File.Delete(state);
+        }
+    }
+
     private sealed class StubHandler(string json) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        public int RequestCount { get; private set; }
+        public List<string?> IfNoneMatchValues { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            IfNoneMatchValues.Add(request.Headers.IfNoneMatch.FirstOrDefault()?.Tag);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(json),
                 Headers = { ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"test\"") }
             });
+        }
     }
 }

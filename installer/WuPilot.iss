@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.3.0"
+  #define AppVersion "0.3.1"
 #endif
 
 #ifndef AppArch
@@ -72,7 +72,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "autoupdates"; Description: "Automatically check for stable WuPilot updates"; GroupDescription: "Update preferences:"; Flags: checkedonce
+Name: "autoupdates"; Description: "Check for stable WuPilot updates when the application launches"; GroupDescription: "Update preferences:"; Flags: checkedonce
 
 [Files]
 Source: "{#AppSourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

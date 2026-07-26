@@ -54,7 +54,7 @@ The offline catalog contains security metadata only and is not a driver-source t
 - Cache reset on a disposable VM creates timestamped recovery paths and restarts required services without deleting the old stores.
 - x64 and ARM64 publish outputs launch on their corresponding architecture.
 - The x64 and ARM64 installers display the expected version and architecture, install under Program Files, create the selected shortcuts, launch WuPilot through UAC, upgrade in place, and uninstall cleanly.
-- The automatic stable-update task defaults on, can be disabled during setup, and persists the machine preference without adding a background process.
+- The stable-update launch check defaults on, can be disabled during setup, and persists the machine preference without adding a background process. Every enabled launch contacts GitHub conditionally with the cached ETag; a manual check remains unconditional.
 - Upgrading from the previous public release selects the native installer, requires confirmation, rejects a wrong checksum or architecture, warns for unsigned payloads, preserves the icon, and retains LocalAppData audit/metric state.
 - Window placement, page, theme, scan setup, result filters, performance range, policy filters, favorites, and taskbar preference survive a normal relaunch; placement is clamped after removing or rearranging a monitor.
 - Scan results, selected updates, technician notes, and staged policy changes do not reappear after relaunch.

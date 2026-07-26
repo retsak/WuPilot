@@ -12,12 +12,12 @@ Each release contains:
 
 The installers use a stable application ID, so a newer release upgrades an existing installation in place. They install WuPilot under the 64-bit Program Files directory, create a Start Menu shortcut, offer an optional desktop shortcut, register an uninstaller, and can launch WuPilot after setup.
 
-Setup also offers an enabled-by-default automatic stable-release check. This writes `HKLM\SOFTWARE\WuPilot\AutomaticUpdateChecks`; it does not install a service or scheduled task. The application checks only while it is running and keeps manual checks available.
+Setup also offers an enabled-by-default stable-release check at application launch. This writes `HKLM\SOFTWARE\WuPilot\AutomaticUpdateChecks`; it does not install a service or scheduled task. Each enabled launch sends a conditional GitHub request using the cached ETag, and manual checks remain available.
 
 The installer requests administrator access because WuPilot itself is elevation-first. It supports unattended deployment with the standard Inno Setup switches:
 
 ```powershell
-WuPilot-0.3.0-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+WuPilot-0.3.1-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 ## Create a release
@@ -27,8 +27,8 @@ WuPilot-0.3.0-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 3. Create and push an annotated tag:
 
    ```powershell
-   git tag -a v0.3.0 -m "WuPilot 0.3.0"
-   git push origin v0.3.0
+   git tag -a v0.3.1 -m "WuPilot 0.3.1"
+   git push origin v0.3.1
    ```
 
 4. Follow the **Windows release** workflow in GitHub Actions.
@@ -70,8 +70,8 @@ The PFX is written only to the temporary GitHub-hosted runner and is not uploade
 Install Inno Setup 7, then run:
 
 ```powershell
-./scripts/Build-WuPilotInstaller.ps1 -Platform x64 -Version 0.3.0
-./scripts/Build-WuPilotInstaller.ps1 -Platform ARM64 -Version 0.3.0
+./scripts/Build-WuPilotInstaller.ps1 -Platform x64 -Version 0.3.1
+./scripts/Build-WuPilotInstaller.ps1 -Platform ARM64 -Version 0.3.1
 ```
 
 Use `-InnoCompilerPath` when `ISCC.exe` is not in a standard installation path. Use `-SkipAppBuild` only when the matching self-contained publish directory already exists and has been verified.

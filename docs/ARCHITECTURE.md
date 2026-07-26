@@ -63,7 +63,7 @@ Portable immutable models describe application preferences, window placement, op
 
 Preferences contain workflow configuration only. Scan evidence, technician notes, selected updates, and pending policy changes are excluded by design. The policy cart adds an expected-requested-value precondition so drift is rejected before a transactional registry batch begins.
 
-The updater has no background process. It uses a cached ETag and release response, checks at most daily while the application runs, chooses the current architecture, and fails closed unless GitHub's asset digest and sidecar checksum agree.
+The updater has no background process. When the machine preference is enabled, every application launch starts a nonblocking conditional request using the cached ETag and release response. Manual checks bypass the cache. The updater chooses the current architecture and fails closed unless GitHub's asset digest and sidecar checksum agree.
 
 ## Concurrency and cancellation
 

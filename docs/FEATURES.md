@@ -236,7 +236,7 @@ When a WuPilot action requires a restart, the pending record survives app closur
 
 ## WuPilot updates
 
-Automatic stable-release checks run at most daily while WuPilot is open when enabled by the installer. **About > Check for updates** always forces a fresh check. WuPilot ignores draft/prerelease versions, selects the current architecture, downloads only from HTTPS GitHub release URLs, and verifies SHA-256 against both the GitHub digest and checksum asset. Authenticode signatures are required to be valid when present; unsigned releases require an additional confirmation.
+An enabled installer preference starts a nonblocking stable-release check whenever WuPilot launches. Launch checks send the cached GitHub ETag to avoid downloading unchanged release metadata; **About > Check for updates** always forces a fresh request. WuPilot ignores draft/prerelease versions, selects the current architecture, downloads only from HTTPS GitHub release URLs, and verifies SHA-256 against both the GitHub digest and checksum asset. Authenticode signatures are required to be valid when present; unsigned releases require an additional confirmation.
 
 ## Evidence export
 

@@ -46,12 +46,12 @@ Download the latest installer from [GitHub Releases](https://github.com/retsak/W
 
 Run the installer, accept the Windows elevation prompt, and start WuPilot from the Start Menu. The installer is self-contained: users do not need the .NET SDK, Windows App SDK, Visual Studio, or a source checkout.
 
-The installer supports in-place upgrades, uninstall through Windows Settings, automatic light/dark appearance, an optional desktop shortcut, and silent deployment. Its default **Automatically check for stable WuPilot updates** option enables a non-background daily check while WuPilot is open; About always offers a manual check. Until a trusted code-signing certificate is configured for the project, Windows may identify the publisher as unknown or display a SmartScreen warning. Release checksum files are provided for integrity verification.
+The installer supports in-place upgrades, uninstall through Windows Settings, automatic light/dark appearance, an optional desktop shortcut, and silent deployment. Its enabled-by-default **Check for stable WuPilot updates when the application launches** option performs a nonblocking launch check without a background component; About always offers a manual check. Until a trusted code-signing certificate is configured for the project, Windows may identify the publisher as unknown or display a SmartScreen warning. Release checksum files are provided for integrity verification.
 
 For unattended installation:
 
 ```powershell
-WuPilot-0.3.0-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+WuPilot-0.3.1-win-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 WuPilot requests administrator rights because some WUA methods, diagnostics, service controls, and repair tools require elevation.
@@ -70,7 +70,7 @@ cd WuPilot
 To build a distributable installer locally, install Inno Setup 7 and run:
 
 ```powershell
-./scripts/Build-WuPilotInstaller.ps1 -Platform x64 -Version 0.3.0
+./scripts/Build-WuPilotInstaller.ps1 -Platform x64 -Version 0.3.1
 ```
 
 Release and signing details are documented in [`docs/RELEASING.md`](docs/RELEASING.md).
@@ -111,7 +111,7 @@ Operation metrics are retained for up to 365 days or 5,000 entries under `%Local
 
 ### Application updates
 
-WuPilot checks `retsak/WuPilot` stable releases at most once every 24 hours while the app is running. It ignores drafts and prereleases, selects only the native x64 or ARM64 installer, and requires the downloaded SHA-256 to match both GitHub's asset digest and the release checksum sidecar. A signed installer must have a valid Authenticode status; an unsigned but hash-valid installer receives an additional warning. WuPilot never downloads or installs an update without confirmation.
+WuPilot checks `retsak/WuPilot` stable releases whenever the application launches if the installer preference is enabled. The nonblocking launch request reuses GitHub's cached ETag, while **About > Check for updates** forces an unconditional request. WuPilot ignores drafts and prereleases, selects only the native x64 or ARM64 installer, and requires the downloaded SHA-256 to match both GitHub's asset digest and the release checksum sidecar. A signed installer must have a valid Authenticode status; an unsigned but hash-valid installer receives an additional warning. WuPilot never downloads or installs an update without confirmation.
 
 ![About page with stable release update check](docs/images/windows-validation-2026-07-25/about-0.2.0.png)
 

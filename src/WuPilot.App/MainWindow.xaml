@@ -602,7 +602,7 @@
                         <TextBlock Text="Keyboard shortcuts" FontWeight="SemiBold" FontSize="18" />
                         <TextBlock Text="Ctrl+1 Scan · Ctrl+2 Update controls · Ctrl+3 Performance · Ctrl+F Search · F5 Refresh · Ctrl+Enter Start scan · Esc Cancel · Ctrl+Shift+E Export evidence" TextWrapping="Wrap" />
                         <TextBlock Text="Application updates" FontWeight="SemiBold" FontSize="18" />
-                        <TextBlock x:Name="AppUpdateStatusText" Text="Stable releases are checked at most once every 24 hours while WuPilot is open." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock x:Name="AppUpdateStatusText" Text="WuPilot checks for stable releases when it launches. Cached release metadata keeps the check lightweight." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <Button Content="Check for updates" Click="CheckForUpdates_Click" HorizontalAlignment="Left" />
                         <TextBlock Text="Microsoft references" FontWeight="SemiBold" FontSize="18" />
                         <HyperlinkButton Content="WinUI 3 documentation" NavigateUri="https://learn.microsoft.com/windows/apps/winui/winui3/" />
