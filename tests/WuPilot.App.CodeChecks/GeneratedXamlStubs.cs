@@ -38,7 +38,12 @@ public sealed partial class MainWindow
     private readonly ComboBox ResultFilterCombo = null!;
     private readonly ComboBox ResultSortCombo = null!;
     private readonly TextBlock VisibleResultCountText = null!;
+    private readonly TextBlock ResultsStateText = null!;
+    private readonly TextBlock SelectedResultCountText = null!;
     private readonly ListView UpdatesList = null!;
+    private readonly Button InstallAllButton = null!;
+    private readonly Button InstallSelectedButton = null!;
+    private readonly Button DownloadSelectedButton = null!;
     private readonly Border ScanInsightCard = null!;
     private readonly TextBlock InsightCountsText = null!;
     private readonly TextBlock InsightSafetyText = null!;
@@ -111,6 +116,11 @@ public sealed partial class MainWindow
     private readonly TextBlock DoModeText = null!;
     private readonly TextBlock DoDetailText = null!;
     private readonly TextBlock PerformanceSummaryText = null!;
+    private readonly ListView PerformanceList = null!;
+    private readonly TextBlock OperationDetailTitle = null!;
+    private readonly TextBlock OperationDetailText = null!;
+    private readonly InfoBar OperationRecommendation = null!;
+    private readonly Button CopyOperationButton = null!;
     private readonly TextBlock AppUpdateStatusText = null!;
     private readonly ToggleSwitch TaskbarAttentionToggle = null!;
     private readonly Button CompletionButton = null!;

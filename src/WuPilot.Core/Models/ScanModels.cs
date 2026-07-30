@@ -109,6 +109,11 @@ public sealed record UpdateRecord(
 {
     public string IdentityKey => $"{UpdateId.ToUpperInvariant()}:{RevisionNumber}";
     public bool IsDriver => Kind == UpdateKind.Driver;
+    public bool RequiresUserInput => CanRequestUserInput == true;
+    public bool CanInstallSilently => !IsInstalled && !RequiresUserInput;
+    public bool CanInstallInteractively => RequiresUserInput;
+    public string InteractiveInstallMethod => RequiresUserInput ? "Windows Update or OEM support tool" : "Not required";
+    public bool RequiresVendorInstaller => IsDriver && BrowseOnly == true;
 }
 
 public sealed record ProviderScanResult(

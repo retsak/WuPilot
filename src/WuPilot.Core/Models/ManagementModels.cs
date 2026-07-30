@@ -112,7 +112,11 @@ public sealed record OperationMetric(
     DateTimeOffset? BootCompletedAt = null,
     EvidenceConfidence RebootConfidence = EvidenceConfidence.Unavailable,
     EvidenceConfidence TimingConfidence = EvidenceConfidence.Exact,
-    string EvidenceSource = "WuPilot monotonic timer");
+    string EvidenceSource = "WuPilot monotonic timer",
+    string? UpdateSource = null,
+    string? InstallationMethod = null,
+    string? HardwareId = null,
+    bool? RequiresUserInput = null);
 
 public sealed record AppReleaseInfo(
     Version Version,

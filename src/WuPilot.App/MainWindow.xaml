@@ -163,12 +163,13 @@
                             <Grid>
                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                                 <Grid Padding="16,12" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" RowSpacing="8">
-                                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                     <StackPanel Orientation="Horizontal" Spacing="12">
                                         <TextBlock Text="Results" FontWeight="SemiBold" />
                                         <TextBlock Text="{x:Bind ResultSummary, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         <TextBlock x:Name="VisibleResultCountText" Text="0 shown" Foreground="{StaticResource WuPilotAccentBrush}" />
+                                        <TextBlock x:Name="ResultsStateText" Text="Run a scan to load results." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                                         <Button Content="Select visible" Click="SelectVisible_Click" Padding="10,4" />
@@ -180,8 +181,15 @@
                                         <ComboBox x:Name="ResultFilterCombo" Width="150" ItemsSource="{x:Bind ResultFilterOptions}" DisplayMemberPath="DisplayName" SelectedIndex="0" SelectionChanged="ResultFilter_SelectionChanged" />
                                         <ComboBox x:Name="ResultSortCombo" Width="190" ItemsSource="{x:Bind ResultSortOptions}" DisplayMemberPath="DisplayName" SelectedIndex="0" SelectionChanged="ResultSort_SelectionChanged" />
                                     </StackPanel>
+                                    <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="8">
+                                        <Button x:Name="InstallAllButton" Content="Install all" Click="InstallAll_Click" Style="{StaticResource AccentButtonStyle}" IsEnabled="False" ToolTipService.ToolTip="Installs all eligible updates and excludes interactive or unsupported items." />
+                                        <Button x:Name="InstallSelectedButton" Content="Install selected" Click="InstallSelected_Click" IsEnabled="False" ToolTipService.ToolTip="Select one or more missing updates to enable this action." />
+                                        <Button x:Name="DownloadSelectedButton" Content="Download selected" Click="DownloadSelected_Click" IsEnabled="False" ToolTipService.ToolTip="Select one or more missing updates to download their payloads." />
+                                        <TextBlock x:Name="SelectedResultCountText" Text="0 selected" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
                                 </Grid>
-                                <ListView x:Name="UpdatesList" Grid.Row="1" ItemsSource="{x:Bind VisibleUpdates}" SelectionChanged="UpdatesList_SelectionChanged" SelectionMode="Multiple">
+                                <ListView x:Name="UpdatesList" Grid.Row="2" ItemsSource="{x:Bind VisibleUpdates}" SelectionChanged="UpdatesList_SelectionChanged" SelectionMode="Multiple"
+                                          ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollMode="Enabled">
                                     <ListView.ItemTemplate>
                                         <DataTemplate>
                                             <Grid Padding="8" MinHeight="74">
@@ -191,6 +199,7 @@
                                                     <TextBlock Text="{Binding Title}" TextWrapping="Wrap" FontWeight="SemiBold" MaxLines="2" />
                                                     <TextBlock Text="{Binding Metadata}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" />
                                                     <TextBlock Text="{Binding SourceLabel}" Foreground="{StaticResource WuPilotAccentBrush}" FontSize="12" />
+                                                    <TextBlock Text="{Binding InstallationCapabilityLabel}" Foreground="{ThemeResource SystemFillColorCautionBrush}" FontSize="12" />
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="2" HorizontalAlignment="Right" Spacing="4">
                                                     <Border Padding="6,2" CornerRadius="10" Background="{ThemeResource ControlFillColorSecondaryBrush}"><TextBlock Text="{Binding TypeLabel}" FontSize="11" /></Border>
@@ -459,9 +468,26 @@
                     <Grid Grid.Row="2" ColumnSpacing="16">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="1.25*" /><ColumnDefinition Width="0.75*" /></Grid.ColumnDefinitions>
                         <Border Style="{StaticResource SectionCardStyle}">
-                            <Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions><TextBlock x:Name="PerformanceSummaryText" Text="No retained operations." FontWeight="SemiBold" /><ListView Grid.Row="1" ItemsSource="{x:Bind VisibleMetrics}"><ListView.ItemTemplate><DataTemplate><Grid Padding="8" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="200" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="{Binding When}" /><TextBlock Text="{Binding Result}" FontSize="11" /></StackPanel><TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock Grid.Column="2" Text="{Binding Timing}" FontSize="11" TextWrapping="Wrap" HorizontalAlignment="Right" /></Grid></DataTemplate></ListView.ItemTemplate></ListView></Grid>
+                            <Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions><TextBlock x:Name="PerformanceSummaryText" Text="No retained operations." FontWeight="SemiBold" /><ListView x:Name="PerformanceList" Grid.Row="1" ItemsSource="{x:Bind VisibleMetrics}" SelectionMode="Single" SelectionChanged="PerformanceList_SelectionChanged"><ListView.ItemTemplate><DataTemplate><Grid Padding="8" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="200" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="{Binding When}" /><TextBlock Text="{Binding Result}" FontSize="11" /></StackPanel><TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock Grid.Column="2" Text="{Binding Timing}" FontSize="11" TextWrapping="Wrap" HorizontalAlignment="Right" /></Grid></DataTemplate></ListView.ItemTemplate></ListView></Grid>
                         </Border>
-                        <Border Grid.Column="1" Style="{StaticResource SectionCardStyle}"><StackPanel Spacing="8"><TextBlock Text="Delivery Optimization evidence" FontWeight="SemiBold" /><TextBlock x:Name="DoDetailText" Text="Refresh to collect supported Delivery Optimization telemetry." TextWrapping="Wrap" /><InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Title="Timing confidence" Message="WuPilot actions use monotonic timers. Windows history and reboot correlations are shown only when matching event boundaries exist and are labeled estimated." /></StackPanel></Border>
+                        <Border Grid.Column="1" Style="{StaticResource SectionCardStyle}">
+                            <ScrollViewer>
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Operation details" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="OperationDetailTitle" Text="Select an operation to inspect its diagnostics." FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="OperationDetailText" Text="No operation selected." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <InfoBar x:Name="OperationRecommendation" IsOpen="False" IsClosable="False" Severity="Warning" Title="Recommended next action" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button x:Name="CopyOperationButton" Content="Copy details" Click="CopyOperationDetails_Click" IsEnabled="False" />
+                                        <Button Content="Export evidence" Click="Export_Click" IsEnabled="{x:Bind HasScanReport, Mode=OneWay}" />
+                                        <Button Content="Open Windows Update" Click="OpenWindowsUpdate_Click" />
+                                    </StackPanel>
+                                    <TextBlock Text="Delivery Optimization evidence" FontWeight="SemiBold" Margin="0,12,0,0" />
+                                    <TextBlock x:Name="DoDetailText" Text="Refresh to collect supported Delivery Optimization telemetry." TextWrapping="Wrap" />
+                                    <InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Title="Timing confidence" Message="WuPilot actions use monotonic timers. Windows history and reboot correlations are shown only when matching event boundaries exist and are labeled estimated." />
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
                     </Grid>
                 </Grid>
 

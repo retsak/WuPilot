@@ -410,6 +410,9 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         _lastScanRequest = request;
 
         SetBusy(true, "Starting Windows Update Agent scan…");
+        ResultsStateText.Text = _scanReport is null
+            ? "Scanning; results will appear when all selected sources finish."
+            : "Scanning; showing the previous completed result set.";
         _operationCancellation = new CancellationTokenSource();
         var progress = CreateProgress();
         Log($"Scan started: {selectedPreset.DisplayName}; sources: {string.Join(", ", providers.Select(static provider => provider.DisplayName))}.");
@@ -421,6 +424,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             _allUpdates.Clear();
             _allUpdates.AddRange(_scanReport.Updates.Select(static update => new UpdateListItem(update)));
             ApplyFilter();
+            ResultsStateText.Text = $"Scan completed {_scanReport.CompletedAt:g}.";
             UpdateScanInsights(_scanReport);
             UpdateScanComparison(_previousScanReport, _scanReport);
             await RefreshWatchlistFromScanAsync(_scanReport);
@@ -439,10 +443,12 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         {
             Log("Scan cancelled. WUA cannot interrupt every synchronous provider call immediately.");
             StatusText.Text = "Scan cancelled";
+            ResultsStateText.Text = _scanReport is null ? "Scan cancelled; no results loaded." : "Scan cancelled; previous completed results retained.";
         }
         catch (Exception exception)
         {
             Log($"Scan failed: {exception.GetType().Name}: {exception.Message}");
+            ResultsStateText.Text = _scanReport is null ? "Scan failed; no results loaded." : "Scan failed; previous completed results retained.";
             await ShowMessageAsync("Scan failed", exception.Message);
         }
         finally
@@ -605,6 +611,13 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (action == UpdateAction.Install && update.RequiresUserInput)
+        {
+            await RecordBlockedInteractiveInstallAsync(update, provider);
+            await ShowInteractiveInstallGuidanceAsync(update);
+            return;
+        }
+
         var dialog = new ContentDialog
         {
             XamlRoot = RootGrid.XamlRoot,
@@ -628,13 +641,17 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             var result = await _actionService.ExecuteAsync(new UpdateActionRequest(update, provider, action, AcceptEula: true), CreateProgress(), _operationCancellation.Token);
-            await _metricStore.SaveAsync(new OperationMetric(
-                Guid.NewGuid(), result.CompletedAt - result.TotalDuration, result.CompletedAt, action.ToString(),
-                update.UpdateId, update.RevisionNumber, update.Title, result.DownloadBytes, result.RevalidationDuration,
-                result.DownloadDuration, result.InstallDuration, result.TotalDuration, result.ResultCode, result.HResult,
-                result.RebootRequired), CancellationToken.None);
+            await SaveOperationMetricAsync(update, provider, action, result);
             Log($"{action} {update.UpdateId}.{update.RevisionNumber}: result {result.ResultCode}, HRESULT 0x{unchecked((uint)result.HResult):X8}, reboot={result.RebootRequired}. {result.Message}");
-            await ShowMessageAsync(result.Succeeded ? $"{action} completed" : $"{action} failed", $"{result.Message}\n\nResult: {result.ResultCode}\nHRESULT: 0x{unchecked((uint)result.HResult):X8}\nRestart required: {result.RebootRequired}\n\nRe-scan to refresh applicability and state.");
+            if (result.HResult == unchecked((int)0x80240020))
+            {
+                await ShowInteractiveInstallGuidanceAsync(update);
+            }
+            else
+            {
+                var explanation = result.HResult == 0 ? string.Empty : $"\n{HResultCatalog.Explain(result.HResult).Explanation}";
+                await ShowMessageAsync(result.Succeeded ? $"{action} completed" : $"{action} failed", $"{result.Message}{explanation}\n\nResult: {result.ResultCode}\nHRESULT: 0x{unchecked((uint)result.HResult):X8}\nRestart required: {result.RebootRequired}\n\nRe-scan only if you need refreshed applicability and state.");
+            }
         }
         catch (OperationCanceledException)
         {
@@ -653,6 +670,143 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private async void InstallAll_Click(object sender, RoutedEventArgs e) =>
+        await RunBulkActionAsync(_allUpdates.Where(static item => !item.Update.IsInstalled).ToArray(), UpdateAction.Install, "all applicable");
+
+    private async void InstallSelected_Click(object sender, RoutedEventArgs e) =>
+        await RunBulkActionAsync(UpdatesList.SelectedItems.OfType<UpdateListItem>().ToArray(), UpdateAction.Install, "selected");
+
+    private async void DownloadSelected_Click(object sender, RoutedEventArgs e) =>
+        await RunBulkActionAsync(UpdatesList.SelectedItems.OfType<UpdateListItem>().ToArray(), UpdateAction.Download, "selected");
+
+    private async Task RunBulkActionAsync(IReadOnlyList<UpdateListItem> candidates, UpdateAction action, string scope)
+    {
+        if (_isBusy || candidates.Count == 0) return;
+
+        var interactive = action == UpdateAction.Install
+            ? candidates.Where(static item => item.Update.RequiresUserInput).ToArray()
+            : Array.Empty<UpdateListItem>();
+        var runnable = candidates
+            .Where(item => !item.Update.IsInstalled)
+            .Where(item => action != UpdateAction.Install || item.Update.CanInstallSilently)
+            .Select(item => (Item: item, Provider: FindProvider(item.Update)))
+            .Where(static pair => pair.Provider is not null && pair.Provider.ScanPackagePath is null)
+            .Select(static pair => (pair.Item, Provider: pair.Provider!))
+            .ToArray();
+
+        if (runnable.Length == 0)
+        {
+            if (interactive.Length > 0)
+            {
+                await ShowInteractiveInstallGuidanceAsync(interactive[0].Update, interactive.Length);
+            }
+            else
+            {
+                await ShowMessageAsync($"{action} unavailable", "None of these updates can use this action from their original scan source.");
+            }
+            return;
+        }
+
+        var skipped = candidates.Count - runnable.Length;
+        var summary = $"{action} {runnable.Length} {scope} update(s) on this device?\n\n" +
+            (interactive.Length > 0 ? $"{interactive.Length} interactive update(s) will be excluded and must be handled through Windows Update or an OEM tool.\n" : string.Empty) +
+            (skipped > interactive.Length ? $"{skipped - interactive.Length} additional update(s) are already installed or have a source that cannot perform this action.\n" : string.Empty) +
+            "\nWuPilot will process the eligible updates sequentially and will not restart the device.";
+        if (!await ConfirmAsync($"Confirm bulk {action.ToString().ToLowerInvariant()}", summary)) return;
+
+        SetBusy(true, $"{action}ing {runnable.Length} updates…");
+        InstallAllButton.IsEnabled = InstallSelectedButton.IsEnabled = DownloadSelectedButton.IsEnabled = false;
+        _operationCancellation = new CancellationTokenSource();
+        var succeeded = 0;
+        var failed = 0;
+        try
+        {
+            for (var index = 0; index < runnable.Length; index++)
+            {
+                _operationCancellation.Token.ThrowIfCancellationRequested();
+                var (item, provider) = runnable[index];
+                StatusText.Text = $"{action} {index + 1} of {runnable.Length}: {item.Title}";
+                var result = await _actionService.ExecuteAsync(
+                    new UpdateActionRequest(item.Update, provider, action, AcceptEula: true),
+                    CreateProgress(),
+                    _operationCancellation.Token);
+                await SaveOperationMetricAsync(item.Update, provider, action, result);
+                if (result.Succeeded) succeeded++; else failed++;
+                Log($"Bulk {action} {item.Update.IdentityKey}: result {result.ResultCode}, HRESULT 0x{unchecked((uint)result.HResult):X8}. {result.Message}");
+            }
+
+            var title = failed == 0 ? $"Bulk {action} completed" : $"Bulk {action} completed with failures";
+            await ShowMessageAsync(title,
+                $"{succeeded} succeeded · {failed} failed · {skipped} excluded.\n\n" +
+                (interactive.Length > 0 ? "Interactive updates were not attempted. Open Windows Update or the OEM support tool to review them.\n\n" : string.Empty) +
+                "Re-scan when you want to refresh applicability and state.");
+        }
+        catch (OperationCanceledException)
+        {
+            Log($"Bulk {action} cancelled after {succeeded + failed} of {runnable.Length} updates.");
+        }
+        finally
+        {
+            SetBusy(false, "Ready");
+            _operationCancellation?.Dispose();
+            _operationCancellation = null;
+            UpdateBulkActionState();
+        }
+    }
+
+    private UpdateProviderDefinition? FindProvider(UpdateRecord update) =>
+        _scanReport?.ProviderResults.Select(static result => result.Provider).FirstOrDefault(provider => provider.Id == update.PrimaryProviderId)
+        ?? ProviderOptions.Select(static option => option.Provider).FirstOrDefault(provider => provider.Id == update.PrimaryProviderId);
+
+    private async Task SaveOperationMetricAsync(UpdateRecord update, UpdateProviderDefinition provider, UpdateAction action, UpdateActionResult result)
+    {
+        await _metricStore.SaveAsync(new OperationMetric(
+            Guid.NewGuid(), result.CompletedAt - result.TotalDuration, result.CompletedAt, action.ToString(),
+            update.UpdateId, update.RevisionNumber, update.Title, result.DownloadBytes, result.RevalidationDuration,
+            result.DownloadDuration, result.InstallDuration, result.TotalDuration, result.ResultCode, result.HResult,
+            result.RebootRequired, UpdateSource: provider.DisplayName,
+            InstallationMethod: action == UpdateAction.Install ? "WuPilot unattended WUA installer" : $"WUA {action}",
+            HardwareId: update.Driver?.HardwareId, RequiresUserInput: update.CanRequestUserInput), CancellationToken.None);
+    }
+
+    private async Task RecordBlockedInteractiveInstallAsync(UpdateRecord update, UpdateProviderDefinition provider)
+    {
+        var now = DateTimeOffset.Now;
+        await _metricStore.SaveAsync(new OperationMetric(
+            Guid.NewGuid(), now, now, "Install blocked — interactive user required",
+            update.UpdateId, update.RevisionNumber, update.Title, null, default, default, default, default,
+            4, unchecked((int)0x80240020), false, UpdateSource: provider.DisplayName,
+            InstallationMethod: "WuPilot unattended WUA installer (blocked before execution)",
+            HardwareId: update.Driver?.HardwareId, RequiresUserInput: true), CancellationToken.None);
+        Log($"Install blocked before execution for {update.IdentityKey}: update requires user input (0x80240020).");
+    }
+
+    private async Task ShowInteractiveInstallGuidanceAsync(UpdateRecord update, int count = 1)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = RootGrid.XamlRoot,
+            Title = "Interactive installation required",
+            Content = count == 1
+                ? $"{update.Title}\n\nThis update reports that it can request user input. WuPilot did not send it through the unattended installer.\n\nHRESULT 0x80240020 (WU_E_NO_INTERACTIVE_USER) means an interactive user is required. Continue in Windows Update or use the OEM support tool/support page."
+                : $"{count} updates require user input and were excluded from unattended installation.\n\nContinue in Windows Update or use the appropriate OEM support tools.",
+            PrimaryButtonText = "Open Windows Update",
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Primary
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            await Launcher.LaunchUriAsync(new Uri("ms-settings:windowsupdate"));
+    }
+
+    private void UpdateBulkActionState()
+    {
+        if (InstallAllButton is null) return;
+        var selected = UpdatesList?.SelectedItems.OfType<UpdateListItem>().ToArray() ?? [];
+        InstallAllButton.IsEnabled = !_isBusy && _allUpdates.Any(static item => !item.Update.IsInstalled);
+        InstallSelectedButton.IsEnabled = !_isBusy && selected.Any(static item => !item.Update.IsInstalled);
+        DownloadSelectedButton.IsEnabled = !_isBusy && selected.Any(static item => !item.Update.IsInstalled);
+    }
+
     private void UpdatesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         var selectedItems = UpdatesList.SelectedItems.OfType<UpdateListItem>().ToArray();
@@ -665,6 +819,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         var enabled = update is not null;
         DownloadButton.IsEnabled = enabled && actionable && update!.IsInstalled == false;
         InstallButton.IsEnabled = enabled && actionable && update!.IsInstalled == false;
+        InstallButton.Content = update?.RequiresUserInput == true ? "Open install options" : "Install";
         HideButton.IsEnabled = enabled && actionable;
         CopyDetailsButton.IsEnabled = enabled;
         OpenSupportButton.IsEnabled = enabled && TryHttpUri(update!.SupportUrl, out _);
@@ -674,6 +829,8 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             ? "Remove from watchlist"
             : "Add to watchlist";
         ExportSelectedButton.IsEnabled = selectedItems.Length > 0;
+        SelectedResultCountText.Text = $"{selectedItems.Length} selected";
+        UpdateBulkActionState();
         if (update is null)
         {
             DetailTitle.Text = selectedItems.Length > 1
@@ -705,6 +862,10 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             : $"{(installed.Driver.IsSigned == true ? "Signed" : installed.Driver.IsSigned == false ? "Unsigned" : "Signature unknown")} · {installed.Driver.Signer ?? "Signer unavailable"} · match {installed.Confidence}% ({installed.MatchedOn})";
         DetailCategories.Text = update.Categories.Count > 0 ? string.Join(", ", update.Categories) : "—";
         DetailWarning.IsOpen = update.IsDriver;
+        DetailWarning.Title = update.RequiresUserInput ? "Interactive installation required" : "Review before installation";
+        DetailWarning.Message = update.RequiresUserInput
+            ? "This update cannot be installed by WuPilot's unattended WUA path. Use Windows Update or the OEM support tool."
+            : "Direct installation tests this device only. Use the evidence bundle and Intune deployment rings for broad rollout.";
     }
 
     private void FilterBox_TextChanged(object sender, TextChangedEventArgs e) { ApplyFilter(); SavePreferencesSoon(); }
@@ -776,6 +937,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         {
             VisibleResultCountText.Text = $"{VisibleUpdates.Count} shown";
         }
+        UpdateBulkActionState();
     }
 
     private void ProviderShortcut_Click(object sender, RoutedEventArgs e)
@@ -1551,6 +1713,31 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private async void RefreshPerformance_Click(object sender, RoutedEventArgs e) => await RefreshPerformanceAsync();
+    private void PerformanceList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (PerformanceList.SelectedItem is not OperationMetricItem selected)
+        {
+            OperationDetailTitle.Text = "Select an operation to inspect its diagnostics.";
+            OperationDetailText.Text = "No operation selected.";
+            OperationRecommendation.IsOpen = false;
+            CopyOperationButton.IsEnabled = false;
+            return;
+        }
+
+        OperationDetailTitle.Text = selected.Title;
+        OperationDetailText.Text = selected.DetailText;
+        OperationRecommendation.Message = selected.Recommendation;
+        OperationRecommendation.IsOpen = selected.Metric.ResultCode is not (2 or 3);
+        CopyOperationButton.IsEnabled = true;
+    }
+
+    private void CopyOperationDetails_Click(object sender, RoutedEventArgs e)
+    {
+        if (PerformanceList.SelectedItem is not OperationMetricItem selected) return;
+        CopyText($"{selected.Title}\n{selected.DetailText}\nRecommended next action: {selected.Recommendation}");
+        StatusText.Text = "Operation details copied";
+    }
+
     private async void PerformanceRange_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (!_profilesLoaded) return;
@@ -1562,6 +1749,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
         try
         {
+            var selectedMetricId = (PerformanceList.SelectedItem as OperationMetricItem)?.Metric.Id;
             var telemetryTask = _deliveryOptimizationService.GetSnapshotAsync(CancellationToken.None);
             var metricsTask = _metricStore.GetAllAsync(CancellationToken.None);
             await Task.WhenAll(telemetryTask, metricsTask);
@@ -1578,6 +1766,8 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             _allMetrics.AddRange((await metricsTask).Select(static metric => new OperationMetricItem(metric)));
             var visible = days == 0 ? _allMetrics : _allMetrics.Where(item => item.Metric.CompletedAt >= DateTimeOffset.Now.AddDays(-days));
             Replace(VisibleMetrics, visible);
+            if (selectedMetricId is not null)
+                PerformanceList.SelectedItem = VisibleMetrics.FirstOrDefault(item => item.Metric.Id == selectedMetricId);
             PerformanceSummaryText.Text = $"{VisibleMetrics.Count} retained WuPilot operations · exact monotonic total timing";
         }
         catch (Exception exception) { PerformanceSummaryText.Text = $"Performance data unavailable: {exception.Message}"; }
@@ -1675,6 +1865,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             _operationStatus = null;
             if (_closeAfterOperation) { _allowClose = true; Close(); }
         }
+        UpdateBulkActionState();
     }
 
     private async Task ShowMessageAsync(string title, string message)

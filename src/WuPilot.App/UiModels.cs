@@ -88,6 +88,11 @@ public sealed class UpdateListItem(UpdateRecord update)
         }.Where(static value => !string.IsNullOrWhiteSpace(value)))
         : string.Join(" · ", Update.KbArticleIds.Select(static kb => kb.StartsWith("KB", StringComparison.OrdinalIgnoreCase) ? kb : $"KB{kb}"));
     public string SizeLabel => Update.MaximumDownloadBytes is null ? "Size unavailable" : FormatBytes(Update.MaximumDownloadBytes.Value);
+    public string InstallationCapabilityLabel => Update.RequiresVendorInstaller
+        ? "Vendor installation may be required"
+        : Update.RequiresUserInput
+            ? "Interactive installation required"
+            : string.Empty;
 
     private static string FormatBytes(long bytes)
     {
@@ -233,6 +238,35 @@ public sealed class OperationMetricItem
     public string When => Metric.CompletedAt.ToString("g");
     public string Result => Metric.ResultCode is 2 or 3 ? "Succeeded" : $"Failed · 0x{unchecked((uint)Metric.HResult):X8}";
     public string Timing => $"Total {Format(Metric.TotalDuration)} · download {Format(Metric.DownloadDuration)} · install {Format(Metric.InstallDuration)} · {Metric.TimingConfidence}";
+    public string HResultLabel => $"0x{unchecked((uint)Metric.HResult):X8}";
+    public string ErrorExplanation => Metric.HResult == 0
+        ? "No error was reported."
+        : HResultCatalog.Explain(Metric.HResult).Explanation;
+    public string Recommendation => Metric.HResult == unchecked((int)0x80240020)
+        ? "This update requires an interactive user. Open Windows Update or the OEM support tool; it cannot be included in an unattended WuPilot installation."
+        : Metric.HResult == 0
+            ? "No remediation is required."
+            : HResultCatalog.Explain(Metric.HResult).Recommendation;
+    public string DetailText => string.Join(Environment.NewLine,
+    [
+        $"Identity: {Metric.UpdateId ?? "Unavailable"}.{Metric.RevisionNumber?.ToString() ?? "?"}",
+        $"Operation: {Metric.Operation}",
+        $"Started: {Metric.StartedAt:O}",
+        $"Completed: {Metric.CompletedAt:O}",
+        $"Duration: {Format(Metric.TotalDuration)}",
+        $"Final status: {Result}",
+        $"Result code: {Metric.ResultCode}",
+        $"HRESULT: {HResultLabel}",
+        $"Description: {ErrorExplanation}",
+        $"Restart required: {Metric.RebootRequired}",
+        $"Update source: {Metric.UpdateSource ?? "Unavailable"}",
+        $"Installation method: {Metric.InstallationMethod ?? "Unavailable"}",
+        $"Hardware ID: {Metric.HardwareId ?? "Unavailable"}",
+        $"User input required: {Metric.RequiresUserInput?.ToString() ?? "Unknown"}",
+        $"Downloaded bytes: {Metric.DownloadBytes?.ToString() ?? "Unavailable"}",
+        $"Timing: {Timing}",
+        $"Evidence source: {Metric.EvidenceSource}"
+    ]);
     private static string Format(TimeSpan value) => value == default ? "n/a" : value.TotalMinutes >= 1 ? $"{value.TotalMinutes:0.0} min" : $"{value.TotalSeconds:0.0} sec";
 }
 
