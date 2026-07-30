@@ -182,7 +182,7 @@
                                         <ComboBox x:Name="ResultSortCombo" Width="190" ItemsSource="{x:Bind ResultSortOptions}" DisplayMemberPath="DisplayName" SelectedIndex="0" SelectionChanged="ResultSort_SelectionChanged" />
                                     </StackPanel>
                                     <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="8">
-                                        <Button x:Name="InstallAllButton" Content="Install all" Click="InstallAll_Click" Style="{StaticResource AccentButtonStyle}" IsEnabled="False" ToolTipService.ToolTip="Installs all eligible updates and excludes interactive or unsupported items." />
+                                        <Button x:Name="InstallAllButton" Content="Install all" Click="InstallAll_Click" Style="{StaticResource AccentButtonStyle}" IsEnabled="False" ToolTipService.ToolTip="Installs all eligible updates sequentially, including updates that may display a prompt." />
                                         <Button x:Name="InstallSelectedButton" Content="Install selected" Click="InstallSelected_Click" IsEnabled="False" ToolTipService.ToolTip="Select one or more missing updates to enable this action." />
                                         <Button x:Name="DownloadSelectedButton" Content="Download selected" Click="DownloadSelected_Click" IsEnabled="False" ToolTipService.ToolTip="Select one or more missing updates to download their payloads." />
                                         <TextBlock x:Name="SelectedResultCountText" Text="0 selected" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

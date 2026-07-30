@@ -5,23 +5,21 @@ namespace WuPilot.Core.Tests;
 public sealed class UpdateInstallationCapabilityTests
 {
     [Fact]
-    public void InteractiveUpdate_IsExcludedFromSilentInstallation()
+    public void PromptCapableUpdate_IsStillInstallable()
     {
         var update = Create(canRequestUserInput: true);
 
-        Assert.True(update.RequiresUserInput);
-        Assert.False(update.CanInstallSilently);
-        Assert.True(update.CanInstallInteractively);
-        Assert.Equal("Windows Update or OEM support tool", update.InteractiveInstallMethod);
+        Assert.True(update.MayRequestUserInput);
+        Assert.True(update.CanAttemptInstall);
     }
 
     [Fact]
-    public void NonInteractiveMissingUpdate_CanInstallSilently()
+    public void NonInteractiveMissingUpdate_CanBeAttempted()
     {
         var update = Create(canRequestUserInput: false);
 
-        Assert.False(update.RequiresUserInput);
-        Assert.True(update.CanInstallSilently);
+        Assert.False(update.MayRequestUserInput);
+        Assert.True(update.CanAttemptInstall);
     }
 
     private static UpdateRecord Create(bool canRequestUserInput) => new(

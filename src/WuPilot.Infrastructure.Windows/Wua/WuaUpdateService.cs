@@ -268,11 +268,6 @@ public sealed class WuaUpdateService(
                 update.AcceptEula();
             }
 
-            if (WuaCom.Try<bool>(() => update.InstallationBehavior.CanRequestUserInput))
-            {
-                return Failure(request, unchecked((int)0x80240020), "This update can request user input and is not safe for unattended installation.");
-            }
-
             dynamic collection = WuaCom.Create("Microsoft.Update.UpdateColl");
             collectionObject = collection;
             collection.Add(update);
@@ -302,9 +297,15 @@ public sealed class WuaUpdateService(
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report(new OperationProgress("Install", "Installing update…", 75, request.Provider.Id));
+            var mayPrompt = WuaCom.Try<bool>(() => update.InstallationBehavior.CanRequestUserInput);
+            progress?.Report(new OperationProgress(
+                "Install",
+                mayPrompt ? "Installing update; respond to any Windows prompts…" : "Installing update…",
+                75,
+                request.Provider.Id));
             dynamic installer = session.CreateUpdateInstaller();
             installer.Updates = collection;
+            installer.AllowSourcePrompts = true;
             phaseTimer.Restart();
             dynamic installResult = installer.Install();
             phaseTimer.Stop();

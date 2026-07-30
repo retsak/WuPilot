@@ -611,20 +611,14 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        if (action == UpdateAction.Install && update.RequiresUserInput)
-        {
-            await RecordBlockedInteractiveInstallAsync(update, provider);
-            await ShowInteractiveInstallGuidanceAsync(update);
-            return;
-        }
-
         var dialog = new ContentDialog
         {
             XamlRoot = RootGrid.XamlRoot,
             Title = $"{action} this update?",
             Content = action switch
             {
-                UpdateAction.Install => $"{update.Title}\n\nThis downloads and installs only on this test device. License terms will be accepted if required. WuPilot will not restart the device.",
+                UpdateAction.Install => $"{update.Title}\n\nThis downloads and installs only on this test device. License terms will be accepted if required. WuPilot will not restart the device." +
+                    (update.MayRequestUserInput ? "\n\nThe update metadata says its installer may request input. WuPilot will still attempt it; keep this window in the foreground and respond if Windows displays a prompt." : string.Empty),
                 UpdateAction.Download => $"{update.Title}\n\nThis downloads payload into the Windows Update cache and accepts license terms if required. It does not install the update.",
                 UpdateAction.Hide => $"{update.Title}\n\nHiding changes local WUA visibility and does not change Intune approval state.",
                 UpdateAction.Show => $"{update.Title}\n\nThis makes the update visible to local WUA searches again.",
@@ -645,7 +639,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             Log($"{action} {update.UpdateId}.{update.RevisionNumber}: result {result.ResultCode}, HRESULT 0x{unchecked((uint)result.HResult):X8}, reboot={result.RebootRequired}. {result.Message}");
             if (result.HResult == unchecked((int)0x80240020))
             {
-                await ShowInteractiveInstallGuidanceAsync(update);
+                await ShowInteractiveInstallFailureAsync(update);
             }
             else
             {
@@ -683,12 +677,11 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (_isBusy || candidates.Count == 0) return;
 
-        var interactive = action == UpdateAction.Install
-            ? candidates.Where(static item => item.Update.RequiresUserInput).ToArray()
+        var promptCapable = action == UpdateAction.Install
+            ? candidates.Where(static item => item.Update.MayRequestUserInput).ToArray()
             : Array.Empty<UpdateListItem>();
         var runnable = candidates
             .Where(item => !item.Update.IsInstalled)
-            .Where(item => action != UpdateAction.Install || item.Update.CanInstallSilently)
             .Select(item => (Item: item, Provider: FindProvider(item.Update)))
             .Where(static pair => pair.Provider is not null && pair.Provider.ScanPackagePath is null)
             .Select(static pair => (pair.Item, Provider: pair.Provider!))
@@ -696,21 +689,14 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
         if (runnable.Length == 0)
         {
-            if (interactive.Length > 0)
-            {
-                await ShowInteractiveInstallGuidanceAsync(interactive[0].Update, interactive.Length);
-            }
-            else
-            {
-                await ShowMessageAsync($"{action} unavailable", "None of these updates can use this action from their original scan source.");
-            }
+            await ShowMessageAsync($"{action} unavailable", "None of these updates can use this action from their original scan source.");
             return;
         }
 
         var skipped = candidates.Count - runnable.Length;
         var summary = $"{action} {runnable.Length} {scope} update(s) on this device?\n\n" +
-            (interactive.Length > 0 ? $"{interactive.Length} interactive update(s) will be excluded and must be handled through Windows Update or an OEM tool.\n" : string.Empty) +
-            (skipped > interactive.Length ? $"{skipped - interactive.Length} additional update(s) are already installed or have a source that cannot perform this action.\n" : string.Empty) +
+            (promptCapable.Length > 0 ? $"{promptCapable.Length} update(s) are marked as capable of requesting input. They will be attempted, not excluded; keep WuPilot in the foreground for any Windows prompts.\n" : string.Empty) +
+            (skipped > 0 ? $"{skipped} update(s) are already installed or have a source that cannot perform this action.\n" : string.Empty) +
             "\nWuPilot will process the eligible updates sequentially and will not restart the device.";
         if (!await ConfirmAsync($"Confirm bulk {action.ToString().ToLowerInvariant()}", summary)) return;
 
@@ -738,7 +724,6 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             var title = failed == 0 ? $"Bulk {action} completed" : $"Bulk {action} completed with failures";
             await ShowMessageAsync(title,
                 $"{succeeded} succeeded · {failed} failed · {skipped} excluded.\n\n" +
-                (interactive.Length > 0 ? "Interactive updates were not attempted. Open Windows Update or the OEM support tool to review them.\n\n" : string.Empty) +
                 "Re-scan when you want to refresh applicability and state.");
         }
         catch (OperationCanceledException)
@@ -765,31 +750,17 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             update.UpdateId, update.RevisionNumber, update.Title, result.DownloadBytes, result.RevalidationDuration,
             result.DownloadDuration, result.InstallDuration, result.TotalDuration, result.ResultCode, result.HResult,
             result.RebootRequired, UpdateSource: provider.DisplayName,
-            InstallationMethod: action == UpdateAction.Install ? "WuPilot unattended WUA installer" : $"WUA {action}",
-            HardwareId: update.Driver?.HardwareId, RequiresUserInput: update.CanRequestUserInput), CancellationToken.None);
+            InstallationMethod: action == UpdateAction.Install ? "WuPilot WUA installer with source prompts enabled" : $"WUA {action}",
+            HardwareId: update.Driver?.HardwareId, MayRequestUserInput: update.CanRequestUserInput), CancellationToken.None);
     }
 
-    private async Task RecordBlockedInteractiveInstallAsync(UpdateRecord update, UpdateProviderDefinition provider)
-    {
-        var now = DateTimeOffset.Now;
-        await _metricStore.SaveAsync(new OperationMetric(
-            Guid.NewGuid(), now, now, "Install blocked — interactive user required",
-            update.UpdateId, update.RevisionNumber, update.Title, null, default, default, default, default,
-            4, unchecked((int)0x80240020), false, UpdateSource: provider.DisplayName,
-            InstallationMethod: "WuPilot unattended WUA installer (blocked before execution)",
-            HardwareId: update.Driver?.HardwareId, RequiresUserInput: true), CancellationToken.None);
-        Log($"Install blocked before execution for {update.IdentityKey}: update requires user input (0x80240020).");
-    }
-
-    private async Task ShowInteractiveInstallGuidanceAsync(UpdateRecord update, int count = 1)
+    private async Task ShowInteractiveInstallFailureAsync(UpdateRecord update)
     {
         var dialog = new ContentDialog
         {
             XamlRoot = RootGrid.XamlRoot,
-            Title = "Interactive installation required",
-            Content = count == 1
-                ? $"{update.Title}\n\nThis update reports that it can request user input. WuPilot did not send it through the unattended installer.\n\nHRESULT 0x80240020 (WU_E_NO_INTERACTIVE_USER) means an interactive user is required. Continue in Windows Update or use the OEM support tool/support page."
-                : $"{count} updates require user input and were excluded from unattended installation.\n\nContinue in Windows Update or use the appropriate OEM support tools.",
+            Title = "Installation needs an interactive user",
+            Content = $"{update.Title}\n\nWuPilot attempted this installation, but Windows returned HRESULT 0x80240020 (WU_E_NO_INTERACTIVE_USER). Microsoft defines this as no interactive user being available to finish the operation.\n\nRetry while signed in and keep WuPilot in the foreground, or continue through Windows Update or the OEM support tool.",
             PrimaryButtonText = "Open Windows Update",
             CloseButtonText = "Close",
             DefaultButton = ContentDialogButton.Primary
@@ -819,7 +790,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         var enabled = update is not null;
         DownloadButton.IsEnabled = enabled && actionable && update!.IsInstalled == false;
         InstallButton.IsEnabled = enabled && actionable && update!.IsInstalled == false;
-        InstallButton.Content = update?.RequiresUserInput == true ? "Open install options" : "Install";
+        InstallButton.Content = "Install";
         HideButton.IsEnabled = enabled && actionable;
         CopyDetailsButton.IsEnabled = enabled;
         OpenSupportButton.IsEnabled = enabled && TryHttpUri(update!.SupportUrl, out _);
@@ -862,9 +833,9 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             : $"{(installed.Driver.IsSigned == true ? "Signed" : installed.Driver.IsSigned == false ? "Unsigned" : "Signature unknown")} · {installed.Driver.Signer ?? "Signer unavailable"} · match {installed.Confidence}% ({installed.MatchedOn})";
         DetailCategories.Text = update.Categories.Count > 0 ? string.Join(", ", update.Categories) : "—";
         DetailWarning.IsOpen = update.IsDriver;
-        DetailWarning.Title = update.RequiresUserInput ? "Interactive installation required" : "Review before installation";
-        DetailWarning.Message = update.RequiresUserInput
-            ? "This update cannot be installed by WuPilot's unattended WUA path. Use Windows Update or the OEM support tool."
+        DetailWarning.Title = update.MayRequestUserInput ? "Installer may request input" : "Review before installation";
+        DetailWarning.Message = update.MayRequestUserInput
+            ? "This metadata flag is a caution, not a block. WuPilot will attempt the update and allow Windows source prompts; keep the window in the foreground."
             : "Direct installation tests this device only. Use the evidence bundle and Intune deployment rings for broad rollout.";
     }
 

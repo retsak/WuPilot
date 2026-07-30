@@ -116,7 +116,11 @@ public sealed record OperationMetric(
     string? UpdateSource = null,
     string? InstallationMethod = null,
     string? HardwareId = null,
-    bool? RequiresUserInput = null);
+    bool? RequiresUserInput = null,
+    bool? MayRequestUserInput = null)
+{
+    public bool? EffectiveMayRequestUserInput => MayRequestUserInput ?? RequiresUserInput;
+}
 
 public sealed record AppReleaseInfo(
     Version Version,

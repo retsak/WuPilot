@@ -90,8 +90,8 @@ public sealed class UpdateListItem(UpdateRecord update)
     public string SizeLabel => Update.MaximumDownloadBytes is null ? "Size unavailable" : FormatBytes(Update.MaximumDownloadBytes.Value);
     public string InstallationCapabilityLabel => Update.RequiresVendorInstaller
         ? "Vendor installation may be required"
-        : Update.RequiresUserInput
-            ? "Interactive installation required"
+        : Update.MayRequestUserInput
+            ? "Installer may request input"
             : string.Empty;
 
     private static string FormatBytes(long bytes)
@@ -243,7 +243,7 @@ public sealed class OperationMetricItem
         ? "No error was reported."
         : HResultCatalog.Explain(Metric.HResult).Explanation;
     public string Recommendation => Metric.HResult == unchecked((int)0x80240020)
-        ? "This update requires an interactive user. Open Windows Update or the OEM support tool; it cannot be included in an unattended WuPilot installation."
+        ? "Retry while signed in and keep WuPilot in the foreground so any installer prompt can be answered. Windows Update or the OEM support tool is also available."
         : Metric.HResult == 0
             ? "No remediation is required."
             : HResultCatalog.Explain(Metric.HResult).Recommendation;
@@ -262,7 +262,7 @@ public sealed class OperationMetricItem
         $"Update source: {Metric.UpdateSource ?? "Unavailable"}",
         $"Installation method: {Metric.InstallationMethod ?? "Unavailable"}",
         $"Hardware ID: {Metric.HardwareId ?? "Unavailable"}",
-        $"User input required: {Metric.RequiresUserInput?.ToString() ?? "Unknown"}",
+        $"Installer may request input: {Metric.EffectiveMayRequestUserInput?.ToString() ?? "Unknown"}",
         $"Downloaded bytes: {Metric.DownloadBytes?.ToString() ?? "Unavailable"}",
         $"Timing: {Timing}",
         $"Evidence source: {Metric.EvidenceSource}"
