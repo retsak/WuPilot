@@ -140,6 +140,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         AppWindow.Closing += AppWindow_Closing;
         AppWindow.Changed += AppWindow_Changed;
         Activated += MainWindow_Activated;
+        RootGrid.ActualThemeChanged += RootGrid_ActualThemeChanged;
         _elapsedTimer.Tick += ElapsedTimer_Tick;
 
         foreach (var provider in UpdateProviderDefinition.BuiltIn)
@@ -209,7 +210,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             var placement = WindowPlacementValidator.Clamp(preferences.Window, work.X, work.Y, work.Width, work.Height);
             AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(placement.X, placement.Y, placement.Width, placement.Height));
             if (placement.IsMaximized && AppWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
-            RootGrid.RequestedTheme = preferences.Theme switch { "Light" => ElementTheme.Light, "Dark" => ElementTheme.Dark, _ => ElementTheme.Default };
+            ApplyTheme(preferences.Theme switch { "Light" => ElementTheme.Light, "Dark" => ElementTheme.Dark, _ => ElementTheme.Default });
             Navigation.IsPaneOpen = preferences.NavigationPaneOpen;
             foreach (var provider in ProviderOptions) provider.IsSelected = preferences.ScanProviderIds?.Contains(provider.Provider.Id, StringComparer.OrdinalIgnoreCase) == true;
             PresetCombo.SelectedItem = PresetOptions.FirstOrDefault(item => item.Value.ToString() == preferences.ScanPreset) ?? PresetOptions[2];
@@ -1034,14 +1035,46 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private void Theme_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: string theme }) return;
-        RootGrid.RequestedTheme = theme switch
+        ApplyTheme(theme switch
         {
             "Light" => ElementTheme.Light,
             "Dark" => ElementTheme.Dark,
             _ => ElementTheme.Default
-        };
+        });
         StatusText.Text = $"Theme: {theme}";
         SavePreferencesSoon();
+    }
+
+    private void ApplyTheme(ElementTheme theme)
+    {
+        RootGrid.RequestedTheme = theme;
+
+        // NavigationView owns templated pane surfaces that do not always refresh
+        // inherited resources when an ancestor changes theme at runtime.
+        Navigation.RequestedTheme = theme;
+        AppTitleBar.RequestedTheme = theme;
+
+        UpdateTitleBarTheme(theme == ElementTheme.Default ? RootGrid.ActualTheme : theme);
+    }
+
+    private void RootGrid_ActualThemeChanged(FrameworkElement sender, object args)
+    {
+        if (RootGrid.RequestedTheme == ElementTheme.Default)
+            UpdateTitleBarTheme(RootGrid.ActualTheme);
+    }
+
+    private void UpdateTitleBarTheme(ElementTheme theme)
+    {
+        var dark = theme == ElementTheme.Dark;
+        var titleBar = AppWindow.TitleBar;
+        titleBar.BackgroundColor = Microsoft.UI.Colors.Transparent;
+        titleBar.InactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
+        titleBar.ForegroundColor = dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
+        titleBar.InactiveForegroundColor = dark ? Microsoft.UI.Colors.LightGray : Microsoft.UI.Colors.DimGray;
+        titleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
+        titleBar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
+        titleBar.ButtonForegroundColor = dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
+        titleBar.ButtonInactiveForegroundColor = dark ? Microsoft.UI.Colors.LightGray : Microsoft.UI.Colors.DimGray;
     }
 
     private void DiagnosticFilter_Changed(object sender, RoutedEventArgs e) => ApplyDiagnosticFilter();

@@ -7,7 +7,8 @@
     mc:Ignorable="d"
     Title="WuPilot">
 
-    <Grid x:Name="RootGrid" Loaded="RootGrid_Loaded" KeyDown="RootGrid_KeyDown" IsTabStop="True">
+    <Grid x:Name="RootGrid" Loaded="RootGrid_Loaded" KeyDown="RootGrid_KeyDown" IsTabStop="True"
+          Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
             <RowDefinition Height="*" />
@@ -45,7 +46,8 @@
             </StackPanel>
         </Grid>
 
-        <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="LeftCompact" IsBackButtonVisible="Collapsed" IsSettingsVisible="False" SelectionChanged="Navigation_SelectionChanged">
+        <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="LeftCompact" IsBackButtonVisible="Collapsed" IsSettingsVisible="False"
+                        Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" SelectionChanged="Navigation_SelectionChanged">
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Name="ScanNav" Content="Scan and review" Tag="scan" Icon="Find" IsSelected="True" />
                 <NavigationViewItem x:Name="CompareNav" Content="Compare scans" Tag="compare">
