@@ -225,8 +225,16 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             ShowLegacyPolicyCheck.IsChecked = preferences.ShowLegacyPolicies;
             TaskbarAttentionToggle.IsOn = preferences.FlashTaskbarOnCompletion;
             NavigateTo(preferences.NavigationTag);
+            DispatcherQueue.TryEnqueue(RefreshPageLayout);
         }
         finally { _isRestoringPreferences = false; }
+    }
+
+    private void RefreshPageLayout()
+    {
+        PageScrollViewer.InvalidateMeasure();
+        PageScrollViewer.InvalidateArrange();
+        PageScrollViewer.UpdateLayout();
     }
 
     private AppPreferences CapturePreferences()
@@ -1325,6 +1333,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         HistoryView.Visibility = tag == "history" ? Visibility.Visible : Visibility.Collapsed;
         ActivityView.Visibility = tag == "activity" ? Visibility.Visible : Visibility.Collapsed;
         AboutView.Visibility = tag == "about" ? Visibility.Visible : Visibility.Collapsed;
+        PageScrollViewer.ChangeView(horizontalOffset: 0, verticalOffset: 0, zoomFactor: null, disableAnimation: true);
         if (tag == "controls" && _allPolicyStates.Count == 0) _ = RefreshSettingsAsync();
         if (tag == "performance") _ = RefreshPerformanceAsync();
         SavePreferencesSoon();

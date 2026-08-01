@@ -16,6 +16,7 @@ public sealed partial class MainWindow
     private readonly TextBlock ElevationBadgeText = null!;
     private readonly TextBlock AppVersionText = null!;
     private readonly NavigationView Navigation = null!;
+    private readonly ScrollViewer PageScrollViewer = null!;
     private readonly NavigationViewItem ScanNav = null!;
     private readonly NavigationViewItem CompareNav = null!;
     private readonly Grid ScanView = null!;

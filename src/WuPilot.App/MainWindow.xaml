@@ -75,6 +75,10 @@
                 <NavigationViewItem Content="About" Tag="about" Icon="Help" />
             </NavigationView.MenuItems>
 
+            <ScrollViewer x:Name="PageScrollViewer"
+                          VerticalScrollMode="Auto" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled"
+                          ZoomMode="Disabled">
             <Grid>
                 <Grid x:Name="ScanView" Padding="24,16,24,20">
                     <Grid.RowDefinitions>
@@ -639,6 +643,7 @@
                     </StackPanel>
                 </Grid>
             </Grid>
+            </ScrollViewer>
         </NavigationView>
 
         <Grid Grid.Row="2" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" Padding="12,4">
