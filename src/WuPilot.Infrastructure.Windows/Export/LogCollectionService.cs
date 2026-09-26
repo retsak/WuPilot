@@ -12,7 +12,7 @@ using WuPilot.Infrastructure.Windows.Profiles;
 
 namespace WuPilot.Infrastructure.Windows.Export;
 
-public sealed record LogCollectionOptions(string Destination, string? InputDirectory = null, int Parallelism = 4, long MaxFileBytes = 64 * 1024 * 1024, int MaxFiles = 300);
+public sealed record LogCollectionOptions(string Destination, string? InputDirectory = null, int Parallelism = 4, long MaxFileBytes = 64 * 1024 * 1024, int MaxFiles = 300, string? SourceTimeZoneId = null);
 public sealed record CollectedLog(string Source, string? File, string Status, long Bytes, double Seconds, string? Sha256, string? Detail);
 public sealed record LogCollectionResult(string LocalZip, string? DeliveredZip, string ReportPath, string? DeliveryError, int Collected, int Unavailable);
 
@@ -135,8 +135,7 @@ public sealed class LogCollectionService
         await WriteJson(Path.Combine(work, "manifest.json"), manifest.OrderBy(m => m.Source).ToArray(), token);
         await WriteJson(Path.Combine(work, "analysis.json"), analyses, token);
         await WriteJson(Path.Combine(work, "operation-metrics.json"), metrics, token);
-        var report = Path.Combine(work, "report.html");
-        await File.WriteAllTextAsync(report, BuildReport(analyses, metrics, manifest), token);
+        var report = await UpgradeReportService.WriteAsync(work, work, analyses, metrics, manifest.ToArray(), options.SourceTimeZoneId, token).ConfigureAwait(false);
         var csv = new StringBuilder("Operation,Title,StartedAt,DownloadSeconds,InstallSeconds,TotalSeconds,ShutdownToBootSeconds,Confidence,ResultCode,HResult\r\n");
         foreach (var m in metrics) csv.AppendLine(string.Join(',', new[] { m.Operation, m.Title, m.StartedAt.ToString("O"), StageSeconds(m.DownloadDuration), StageSeconds(m.InstallDuration), Seconds(m.TotalDuration), RebootSeconds(m), m.TimingConfidence.ToString(), m.ResultCode.ToString(), $"0x{m.HResult:X8}" }.Select(Csv)));
         await File.WriteAllTextAsync(Path.Combine(work, "timings.csv"), csv.ToString(), token);
@@ -209,17 +208,4 @@ public sealed class LogCollectionService
     private static string StageSeconds(TimeSpan value) => value == TimeSpan.Zero ? "Unavailable/not performed" : Seconds(value);
     private static string RebootSeconds(OperationMetric m) => m.BootCompletedAt is { } boot && m.RebootStartedAt is { } shutdown && boot >= shutdown ? Seconds(boot - shutdown) : "Unavailable";
     private static string Csv(string? value) => "\"" + ((value ?? "").StartsWith('=') || (value ?? "").StartsWith('+') || (value ?? "").StartsWith('-') || (value ?? "").StartsWith('@') ? "'" : "") + (value ?? "").Replace("\"", "\"\"") + "\"";
-    private static string BuildReport(IEnumerable<UpgradeLogAnalysis> analyses, IEnumerable<OperationMetric> metrics, IEnumerable<CollectedLog> manifest)
-    {
-        static string H(object? value) => WebUtility.HtmlEncode(value?.ToString() ?? "Unavailable");
-        var html = new StringBuilder("<!doctype html><html lang='en'><meta charset='utf-8'><title>WuPilot upgrade analysis</title><style>body{font:15px Segoe UI;margin:32px;color:#172337}table{border-collapse:collapse;width:100%}td,th{padding:8px;border:1px solid #ccd;text-align:left;overflow-wrap:anywhere}pre{white-space:pre-wrap}h2{margin-top:32px}</style><h1>Upgrade timing and log analysis</h1><p>Exact timings measure WuPilot calls; they do not include offline feature-upgrade servicing. Windows event timings are estimates. Shutdown-to-kernel-boot is not time to desktop or proof the upgrade finished. Missing boundaries remain unavailable. Setup timestamps use the source machine's local wall clock.</p><h2>Operations (seconds)</h2><table><tr><th>Update / operation</th><th>Download</th><th>Install</th><th>Total</th><th>Shutdown to boot</th><th>Confidence / source</th></tr>");
-        foreach (var m in metrics) html.Append($"<tr><td>{H(m.Title)}<br>{H(m.Operation)}<br>{H(m.StartedAt)}</td><td>{H(StageSeconds(m.DownloadDuration))}</td><td>{H(StageSeconds(m.InstallDuration))}</td><td>{H(Seconds(m.TotalDuration))}</td><td>{H(RebootSeconds(m))} ({H(m.RebootConfidence)})</td><td>{H(m.TimingConfidence)} / {H(m.EvidenceSource)}</td></tr>");
-        html.Append("</table><h2>Setup activity windows</h2><p>These are first-to-last observed entries within a file/phase, not measured phase durations. Gaps, retries, missing logs and clock changes prevent an end-to-end upgrade duration.</p><table><tr><th>Source / phase</th><th>First</th><th>Last</th><th>Observed seconds</th></tr>");
-        foreach (var a in analyses.SelectMany(a => a.Activity)) html.Append($"<tr><td>{H(a.Source)}<br>{H(a.Phase)}</td><td>{H(a.First)}</td><td>{H(a.Last)}</td><td>{H(Seconds(a.ObservedSpan))}</td></tr>");
-        html.Append("</table><h2>Log findings</h2><p>Keyword findings require review and do not establish a root cause. Existing SetupDiag results are included when available. Parsing is capped at 500,000 lines and 1,000 findings per file.</p>");
-        foreach (var a in analyses) { if (a.Truncated) html.Append("<p>Parsing limit reached; consult raw logs.</p>"); foreach (var f in a.Findings) html.Append($"<p>{H(f.Source)}:{f.Line}</p><pre>{H(f.Text)}</pre>"); }
-        html.Append("<h2>Collection manifest</h2><p>Raw logs can contain device identifiers and user paths. Live files can change during copying. Missing, limited and denied sources are listed below.</p><table><tr><th>Source</th><th>Status</th><th>Details</th></tr>");
-        foreach (var m in manifest.OrderBy(m => m.Source)) html.Append($"<tr><td>{H(m.Source)}</td><td>{H(m.Status)}</td><td>{H(m.Detail)}</td></tr>");
-        return html.Append("</table></html>").ToString();
-    }
 }

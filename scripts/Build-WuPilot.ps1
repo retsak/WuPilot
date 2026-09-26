@@ -7,7 +7,7 @@ param(
     [string] $Configuration = 'Release',
 
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string] $Version = '0.4.0'
+    [string] $Version = '0.4.1'
 )
 
 $ErrorActionPreference = 'Stop'

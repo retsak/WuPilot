@@ -12,6 +12,20 @@ The manifest records missing, denied and limited sources, file-copy time, bytes 
 
 ## Reports
 
+The HTML report now leads with the latest recognizable OS update attempt and three phase cards: **Download**, **Install → pending reboot**, and **Reboot → update finished**. Waiting between pending reboot and the restart is a separate row. Durations use minutes/seconds, and all displayed event times use the selected source time zone. Other operations, raw log activity, keyword findings and the collection manifest are expandable supporting evidence.
+
+UpdateAgent download requests and DownloadComplete markers define the download/preparation estimate; this includes preparation and retries. Install begins at `Install: Enter` and ends at the first live `Reboot required: [TRUE]` transition. Deserialized reboot flags and later post-reboot result queries are not treated as new phase boundaries. The reboot phase spans restart initiation through a successful matching cumulative package's Installed event in Setup.evtx, including intermediate boots. A plain kernel startup, another package's completion, or normal power-off does not complete this phase. The association between an update and a system restart is chronological and labeled estimated. A cumulative package completion must not be treated as proof that an entire feature upgrade finished.
+
+Recognized markers are derived from the inspected UpdateAgent log format. Unknown formats or missing boundaries stay unconfirmed. The implementation also preserves the older setup logs as supporting evidence; it does not attach them to an unrelated newer update merely because both appear in one bundle. The latest attempt is not necessarily the latest update on the device if newer evidence is missing.
+
+Regenerate an existing bundle without recollecting or zipping raw logs:
+
+```powershell
+WuPilot-Collector.exe --report-only --input 'C:\Support\Bundle' --destination 'C:\Support\ImprovedReport' --time-zone 'Central Standard Time'
+```
+
+This writes `report.html` and `phase-summary.json`. Specify the source device's Windows time zone ID when analyzing another device. With no override, report-only mode reuses the bundle's phase-summary time zone when available; otherwise the analysis machine's local zone is used and shown in the report. Ambiguous or invalid daylight-saving text timestamps are not correlated. Existing raw source files are unchanged.
+
 - `report.html`: offline human-readable timing tables, setup activity windows, findings and collection status. All source text is HTML-escaped.
 - `timings.csv`: operation download, install, total and shutdown-to-boot seconds, confidence and result codes.
 - `operation-metrics.json`: structured timing records including evidence sources.
