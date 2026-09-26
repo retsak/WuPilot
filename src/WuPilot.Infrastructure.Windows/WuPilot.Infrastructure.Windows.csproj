@@ -5,6 +5,7 @@
     <RootNamespace>WuPilot.Infrastructure.Windows</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="WuPilot.Infrastructure.Tests" />
     <ProjectReference Include="../WuPilot.Core/WuPilot.Core.csproj" />
   </ItemGroup>
 </Project>

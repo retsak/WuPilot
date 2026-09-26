@@ -29,7 +29,7 @@ public sealed class EvidenceExportService(string? exportRoot = null) : IEvidence
         var updates = (selection ?? report.Updates).DistinctBy(static update => update.IdentityKey).ToArray();
         var stamp = report.CompletedAt.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture);
         var safeComputer = string.Concat(report.Device.ComputerName.Select(static character => Path.GetInvalidFileNameChars().Contains(character) ? '_' : character));
-        var directory = Path.Combine(_exportRoot, $"{safeComputer}-{stamp}-{report.ScanId.ToString("N")[..8]}");
+        var directory = Path.Combine(_exportRoot, $"{safeComputer}-{stamp}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
 
         await WriteJsonAsync(Path.Combine(directory, "scan-report.json"), report with { Updates = updates }, cancellationToken).ConfigureAwait(false);

@@ -11,6 +11,12 @@ public partial class App
 
 public sealed partial class MainWindow
 {
+    private readonly TextBox LogDestinationBox = null!;
+    private readonly TextBox LogInputBox = null!;
+    private readonly TextBlock LogCollectionStatus = null!;
+    private readonly Button CollectLogsButton = null!;
+    private readonly Button CancelLogCollectionButton = null!;
+    private readonly Button OpenLogReportButton = null!;
     private readonly Grid RootGrid = null!;
     private readonly Grid AppTitleBar = null!;
     private readonly TextBlock ElevationBadgeText = null!;

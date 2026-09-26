@@ -55,6 +55,9 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private DiagnosticSnapshot? _diagnostics;
     private UpdateListItem? _selectedUpdate;
     private bool _isBusy;
+    private bool _collectingLogs;
+    private bool _checkingAppUpdate;
+    private Task? _performanceRefreshTask;
     private bool _profilesLoaded;
     private bool _isRestoringPreferences;
     private bool _operationFailed;
@@ -549,7 +552,11 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             DiagnosticSummaryText.Text = BuildDiagnosticSummary(_diagnostics);
             Log($"Diagnostics {_diagnostics.SnapshotId} completed with {_diagnostics.Findings.Count} findings.");
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            Log("Diagnostics cancelled.");
+        }
+        catch (Exception exception)
         {
             Log($"Diagnostics failed: {exception.Message}");
             await ShowMessageAsync("Diagnostics failed", exception.Message);
@@ -1758,7 +1765,12 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         await RefreshPerformanceAsync();
     }
 
-    private async Task RefreshPerformanceAsync()
+    private Task RefreshPerformanceAsync()
+    {
+        return _performanceRefreshTask is { IsCompleted: false } ? _performanceRefreshTask : _performanceRefreshTask = RefreshPerformanceCoreAsync();
+    }
+
+    private async Task RefreshPerformanceCoreAsync()
     {
         try
         {
@@ -1781,15 +1793,55 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             Replace(VisibleMetrics, visible);
             if (selectedMetricId is not null)
                 PerformanceList.SelectedItem = VisibleMetrics.FirstOrDefault(item => item.Metric.Id == selectedMetricId);
-            PerformanceSummaryText.Text = $"{VisibleMetrics.Count} retained WuPilot operations · exact monotonic total timing";
+            PerformanceSummaryText.Text = $"{VisibleMetrics.Count} operations · {VisibleMetrics.Count(item => item.Metric.TimingConfidence == EvidenceConfidence.Exact)} measured · {VisibleMetrics.Count(item => item.Metric.TimingConfidence != EvidenceConfidence.Exact)} estimated";
         }
         catch (Exception exception) { PerformanceSummaryText.Text = $"Performance data unavailable: {exception.Message}"; }
+    }
+
+    private async void CollectLogs_Click(object sender, RoutedEventArgs e)
+    {
+        if (_collectingLogs) return;
+        _collectingLogs = true;
+        CollectLogsButton.IsEnabled = false;
+        using var cancellation = new CancellationTokenSource();
+        RoutedEventHandler cancel = (_, _) => cancellation.Cancel();
+        CancelLogCollectionButton.Click += cancel;
+        CancelLogCollectionButton.IsEnabled = true;
+        try
+        {
+            var destination = LogDestinationBox.Text.Trim();
+            if (string.IsNullOrEmpty(destination)) destination = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "WuPilot", "LogBundles");
+            var input = string.IsNullOrWhiteSpace(LogInputBox.Text) ? null : LogInputBox.Text.Trim();
+            var result = await new LogCollectionService().CollectAsync(new(destination, input), new Progress<string>(message => LogCollectionStatus.Text = message), cancellation.Token);
+            LogCollectionStatus.Text = $"{result.Collected} collected; {result.Unavailable} missing/limited. ZIP: {result.DeliveredZip ?? result.LocalZip}\nReport: {result.ReportPath}\n{result.DeliveryError}";
+            Log(LogCollectionStatus.Text);
+            OpenLogReportButton.Tag = result.ReportPath;
+            OpenLogReportButton.IsEnabled = true;
+        }
+        catch (OperationCanceledException) { LogCollectionStatus.Text = "Collection cancelled. Partial local files may remain in LocalAppData/WuPilot/LogBundles."; }
+        catch (Exception exception) { LogCollectionStatus.Text = $"Log collection failed: {exception.Message}"; Log(LogCollectionStatus.Text); }
+        finally
+        {
+            CancelLogCollectionButton.Click -= cancel;
+            CancelLogCollectionButton.IsEnabled = false;
+            CollectLogsButton.IsEnabled = true;
+            _collectingLogs = false;
+        }
+    }
+
+    private void OpenLogReport_Click(object sender, RoutedEventArgs e)
+    {
+        try { if (OpenLogReportButton.Tag is string path) Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+        catch (Exception exception) { LogCollectionStatus.Text = $"Could not open report: {exception.Message}"; }
     }
 
     private async void CheckForUpdates_Click(object sender, RoutedEventArgs e) => await CheckForAppUpdateAsync(force: true);
 
     private async Task CheckForAppUpdateAsync(bool force)
     {
+        if (_checkingAppUpdate) return;
+        _checkingAppUpdate = true;
+        var ownsBusyState = false;
         try
         {
             if (!force && !AutomaticUpdatesEnabled()) return;
@@ -1802,13 +1854,17 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
                 return;
             }
             AppUpdateStatusText.Text = $"{release.Name} is available.";
+            if (_isBusy || _collectingLogs) return;
             if (!await ConfirmAsync("WuPilot update available", $"{release.Name}\nPublished {release.PublishedAt:g}\n{release.Size / 1024d / 1024d:0.0} MB\n\n{release.Notes}\n\nDownload and verify the {RuntimeArchitectureLabel()} installer?")) return;
+            if (_isBusy || _collectingLogs) return;
+            ownsBusyState = true;
             SetBusy(true, "Downloading WuPilot update…", cancellable: false);
             var downloaded = await _appUpdateService.DownloadAsync(release, CreateProgress(), CancellationToken.None);
             var signatureWarning = downloaded.IsAuthenticodeSigned
                 ? "The Authenticode signature is valid."
                 : "This release is not Authenticode-signed. Its GitHub and sidecar SHA-256 digests match, but Windows may show an unknown-publisher warning.";
             if (!await ConfirmAsync("Install verified update?", $"SHA-256: {downloaded.Sha256}\n\n{signatureWarning}\n\nWuPilot will close and launch the installer.")) return;
+            if (_collectingLogs) { AppUpdateStatusText.Text = "Finish log collection before installing the application update."; return; }
             _appUpdateService.LaunchInstaller(downloaded);
             Close();
         }
@@ -1818,7 +1874,11 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             if (force) await ShowMessageAsync("Update check failed", exception.Message);
             Log($"App update check failed: {exception.Message}");
         }
-        finally { if (_isBusy) SetBusy(false, "Ready"); }
+        finally
+        {
+            if (ownsBusyState) SetBusy(false, "Ready");
+            _checkingAppUpdate = false;
+        }
     }
 
     private static bool AutomaticUpdatesEnabled()
@@ -1876,7 +1936,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
                 _operationFailed ? OperationRunState.Failed : OperationRunState.Succeeded;
             if (_operationStatus is not null) _ = CompleteOperationAsync(_operationStatus with { State = state, Elapsed = _clock.Now - _operationStatus.StartedAt });
             _operationStatus = null;
-            if (_closeAfterOperation) { _allowClose = true; Close(); }
+            if (_closeAfterOperation && !_collectingLogs) { _allowClose = true; Close(); }
         }
         UpdateBulkActionState();
     }
@@ -1943,6 +2003,12 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (_allowClose) return;
         args.Cancel = true;
+        if (_collectingLogs)
+        {
+            LogCollectionStatus.Text = "Log collection is running. Use Cancel on Performance, or wait for collection to finish before closing.";
+            StatusText.Text = "Log collection is running. Cancel it from Performance before closing.";
+            return;
+        }
         if (_closePromptOpen) return;
         if (_isBusy)
         {

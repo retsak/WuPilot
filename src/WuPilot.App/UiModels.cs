@@ -236,7 +236,10 @@ public sealed class OperationMetricItem
     public OperationMetric Metric { get; }
     public string Title => Metric.Title ?? Metric.Operation;
     public string When => Metric.CompletedAt.ToString("g");
-    public string Result => Metric.ResultCode is 2 or 3 ? "Succeeded" : $"Failed · 0x{unchecked((uint)Metric.HResult):X8}";
+    public string Result => Metric.ResultCode switch { 2 => "Succeeded", 3 => "Succeeded with errors", 5 => "Aborted", _ => $"Failed · 0x{unchecked((uint)Metric.HResult):X8}" };
+    public string RebootTiming => Metric.RebootStartedAt is { } shutdown && Metric.BootCompletedAt is { } boot && boot >= shutdown
+        ? $"{Format(boot - shutdown)} · {Metric.RebootConfidence} (shutdown to kernel boot, not desktop readiness)"
+        : "Unavailable; matching shutdown and boot boundaries are missing.";
     public string Timing => $"Total {Format(Metric.TotalDuration)} · download {Format(Metric.DownloadDuration)} · install {Format(Metric.InstallDuration)} · {Metric.TimingConfidence}";
     public string HResultLabel => $"0x{unchecked((uint)Metric.HResult):X8}";
     public string ErrorExplanation => Metric.HResult == 0
@@ -259,6 +262,7 @@ public sealed class OperationMetricItem
         $"HRESULT: {HResultLabel}",
         $"Description: {ErrorExplanation}",
         $"Restart required: {Metric.RebootRequired}",
+        $"Reboot interval: {RebootTiming}",
         $"Update source: {Metric.UpdateSource ?? "Unavailable"}",
         $"Installation method: {Metric.InstallationMethod ?? "Unavailable"}",
         $"Hardware ID: {Metric.HardwareId ?? "Unavailable"}",

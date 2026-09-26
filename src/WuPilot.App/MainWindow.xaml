@@ -479,7 +479,17 @@
                         <Border Grid.Column="1" Style="{StaticResource SectionCardStyle}">
                             <ScrollViewer>
                                 <StackPanel Spacing="8">
-                                    <TextBlock Text="Operation details" FontWeight="SemiBold" />
+                                    <TextBlock Text="Upgrade logs and reports" FontWeight="SemiBold" />
+                                    <TextBox x:Name="LogDestinationBox" Header="ZIP destination" PlaceholderText="Local folder or \\server\share (blank: Documents/WuPilot/LogBundles)" />
+                                    <TextBox x:Name="LogInputBox" Header="Analyze existing logs (optional folder)" PlaceholderText="Blank collects this device's live logs" />
+                                    <TextBlock Text="Collects setup, servicing and event logs with timing reports. Logs may contain device identifiers and user paths. Uses your current account to access the share." TextWrapping="Wrap" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button x:Name="CollectLogsButton" Content="Collect and ZIP" Click="CollectLogs_Click" />
+                                        <Button x:Name="CancelLogCollectionButton" Content="Cancel" IsEnabled="False" />
+                                        <Button x:Name="OpenLogReportButton" Content="Open report" Click="OpenLogReport_Click" IsEnabled="False" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="LogCollectionStatus" Text="Ready. No scan required. Collection can run alongside update operations." TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                    <TextBlock Text="Operation details" FontWeight="SemiBold" Margin="0,12,0,0" />
                                     <TextBlock x:Name="OperationDetailTitle" Text="Select an operation to inspect its diagnostics." FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
                                     <TextBlock x:Name="OperationDetailText" Text="No operation selected." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                     <InfoBar x:Name="OperationRecommendation" IsOpen="False" IsClosable="False" Severity="Warning" Title="Recommended next action" />

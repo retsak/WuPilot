@@ -6,38 +6,77 @@ using WuPilot.Infrastructure.Windows.Diagnostics;
 
 namespace WuPilot.Infrastructure.Windows.Profiles;
 
-public sealed class JsonOperationMetricStore(string? path = null) : IOperationMetricStore
+public sealed class JsonOperationMetricStore(string? path = null, bool readOnly = false) : IOperationMetricStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     private readonly string _path = path ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WuPilot", "operation-metrics.json");
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> Gates = new(StringComparer.OrdinalIgnoreCase);
+    private SemaphoreSlim Gate => Gates.GetOrAdd(Path.GetFullPath(_path), static _ => new(1, 1));
 
     public async Task<IReadOnlyList<OperationMetric>> GetAllAsync(CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        List<OperationMetric> stored;
+        await Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var stored = await ReadAsync(cancellationToken).ConfigureAwait(false);
-            var rebootChanged = await CorrelateRebootsAsync(stored, cancellationToken).ConfigureAwait(false);
-            if (rebootChanged) await WriteAsync(stored, cancellationToken).ConfigureAwait(false);
-            var inferred = await ReadEstimatedWindowsHistoryAsync(cancellationToken).ConfigureAwait(false);
-            return stored.Concat(inferred).OrderByDescending(static item => item.CompletedAt).Take(5000).ToArray();
+            await using var fileLock = await AcquireFileLockAsync(cancellationToken).ConfigureAwait(false);
+            stored = await ReadAsync(cancellationToken).ConfigureAwait(false);
         }
-        finally { _gate.Release(); }
+        finally { Gate.Release(); }
+        // Event queries may take tens of seconds; never hold the writer gate while querying Windows.
+        var historyTask = ReadEstimatedWindowsHistoryAsync(cancellationToken);
+        var rebootTask = CorrelateRebootsAsync(stored, cancellationToken);
+        await Task.WhenAll(historyTask, rebootTask).ConfigureAwait(false);
+        if (await rebootTask.ConfigureAwait(false) && !readOnly)
+        {
+            await Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await using var fileLock = await AcquireFileLockAsync(cancellationToken).ConfigureAwait(false);
+                var latest = await ReadAsync(cancellationToken).ConfigureAwait(false);
+                var correlated = stored.Where(m => m.BootCompletedAt is not null).ToDictionary(m => m.Id);
+                for (var i = 0; i < latest.Count; i++)
+                    if (latest[i].BootCompletedAt is null && correlated.TryGetValue(latest[i].Id, out var match))
+                        latest[i] = latest[i] with { RebootStartedAt = match.RebootStartedAt, BootCompletedAt = match.BootCompletedAt, RebootConfidence = match.RebootConfidence };
+                await WriteAsync(latest, cancellationToken).ConfigureAwait(false);
+                stored = latest;
+            }
+            finally { Gate.Release(); }
+        }
+        var inferred = await historyTask.ConfigureAwait(false);
+        return stored.Concat(inferred).OrderByDescending(static item => item.CompletedAt).Take(5000).ToArray();
     }
 
     public async Task SaveAsync(OperationMetric metric, CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (readOnly) throw new InvalidOperationException("This metric store is read-only.");
+        await Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var fileLock = await AcquireFileLockAsync(cancellationToken).ConfigureAwait(false);
             var all = await ReadAsync(cancellationToken).ConfigureAwait(false);
             all.RemoveAll(item => item.CompletedAt < DateTimeOffset.Now.AddDays(-365));
             all.Add(metric);
             all = all.OrderByDescending(static item => item.CompletedAt).Take(5000).OrderBy(static item => item.CompletedAt).ToList();
             await WriteAsync(all, cancellationToken).ConfigureAwait(false);
         }
-        finally { _gate.Release(); }
+        finally { Gate.Release(); }
+    }
+
+    private async Task<FileStream?> AcquireFileLockAsync(CancellationToken token)
+    {
+        if (readOnly) return null;
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_path))!);
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            try { return new FileStream(_path + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+            catch (IOException ex) when ((ex.HResult & 0xffff) is 32 or 33 && timer.Elapsed < TimeSpan.FromSeconds(10))
+            {
+                await Task.Delay(50, token).ConfigureAwait(false);
+            }
+        }
     }
 
     private async Task<List<OperationMetric>> ReadAsync(CancellationToken cancellationToken)
@@ -45,12 +84,12 @@ public sealed class JsonOperationMetricStore(string? path = null) : IOperationMe
         if (!File.Exists(_path)) return [];
         try
         {
-            await using var stream = File.OpenRead(_path);
+            await using var stream = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             return await JsonSerializer.DeserializeAsync<List<OperationMetric>>(stream, JsonOptions, cancellationToken).ConfigureAwait(false) ?? [];
         }
         catch (JsonException)
         {
-            File.Move(_path, _path + $".corrupt-{DateTime.Now:yyyyMMddHHmmss}", true);
+            if (!readOnly) File.Move(_path, _path + $".corrupt-{DateTime.Now:yyyyMMddHHmmss}", true);
             return [];
         }
     }
@@ -58,7 +97,7 @@ public sealed class JsonOperationMetricStore(string? path = null) : IOperationMe
     private async Task WriteAsync(List<OperationMetric> all, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        var temporary = _path + ".tmp";
+        var temporary = _path + $".{Guid.NewGuid():N}.tmp";
         await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(all, JsonOptions), new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
         File.Move(temporary, _path, true);
     }
@@ -75,7 +114,8 @@ public sealed class JsonOperationMetricStore(string? path = null) : IOperationMe
         {
             using var document = JsonDocument.Parse(result.Output);
             var events = document.RootElement.ValueKind == JsonValueKind.Array ? document.RootElement.EnumerateArray().ToArray() : [document.RootElement];
-            var values = events.Select(element => (Time: element.GetProperty("TimeCreated").GetDateTimeOffset(), Id: element.GetProperty("Id").GetInt32())).ToArray();
+            var values = events.Where(element => element.GetProperty("ProviderName").GetString() == "Microsoft-Windows-Kernel-General")
+                .Select(element => (Time: element.GetProperty("TimeCreated").GetDateTimeOffset(), Id: element.GetProperty("Id").GetInt32())).ToArray();
             var changed = false;
             for (var index = 0; index < metrics.Count; index++)
             {
@@ -97,26 +137,39 @@ public sealed class JsonOperationMetricStore(string? path = null) : IOperationMe
     {
         const string script = """
             Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-WindowsUpdateClient/Operational';Id=19,20,34,43,44;StartTime=(Get-Date).AddDays(-90)} -MaxEvents 1000 -ErrorAction Stop |
-              Sort-Object TimeCreated | ForEach-Object { [pscustomobject]@{TimeCreated=$_.TimeCreated.ToString('o');Id=$_.Id;Message=$_.Message} } | ConvertTo-Json -Compress -Depth 3
+              Sort-Object TimeCreated | ForEach-Object {
+                $eventXml=[xml]$_.ToXml()
+                $identity=@($eventXml.Event.EventData.Data | Where-Object { $_.Name -in @('updateGuid','updateId') } | ForEach-Object { $_.'#text' }) | Select-Object -First 1
+                [pscustomobject]@{TimeCreated=$_.TimeCreated.ToString('o');Id=$_.Id;Message=$_.Message;Identity=$identity}
+              } | ConvertTo-Json -Compress -Depth 3
             """;
         var result = await ProcessRunner.PowerShellAsync(script, TimeSpan.FromSeconds(25), cancellationToken).ConfigureAwait(false);
         if (result.ExitCode != 0 || string.IsNullOrWhiteSpace(result.Output)) return [];
+        return ParseEstimatedWindowsHistory(result.Output);
+    }
+
+    internal static IReadOnlyList<OperationMetric> ParseEstimatedWindowsHistory(string json)
+    {
         try
         {
-            using var document = JsonDocument.Parse(result.Output);
+            using var document = JsonDocument.Parse(json);
             var elements = document.RootElement.ValueKind == JsonValueKind.Array ? document.RootElement.EnumerateArray().ToArray() : [document.RootElement];
             var events = elements.Select(element => new EventRecord(
                 element.GetProperty("TimeCreated").GetDateTimeOffset(),
                 element.GetProperty("Id").GetInt32(),
                 element.TryGetProperty("Message", out var message) ? message.GetString() ?? string.Empty : string.Empty,
-                Identity(element.TryGetProperty("Message", out var text) ? text.GetString() ?? string.Empty : string.Empty))).ToArray();
+                Identity(element.TryGetProperty("Identity", out var identity) && identity.ValueKind == JsonValueKind.String ? identity.GetString() ?? string.Empty :
+                    element.TryGetProperty("Message", out var text) ? text.GetString() ?? string.Empty : string.Empty))).OrderBy(e => e.Time).ToArray();
             var metrics = new List<OperationMetric>();
             foreach (var completion in events.Where(static item => item.Id is 19 or 20 or 34))
             {
+                if (completion.Identity is null) continue;
                 var startId = completion.Id == 34 ? 44 : 43;
                 var start = events.LastOrDefault(item => item.Id == startId && item.Time < completion.Time &&
-                    completion.Time - item.Time < TimeSpan.FromDays(2) && (item.Identity == completion.Identity || completion.Identity is null));
+                    completion.Time - item.Time < TimeSpan.FromDays(2) && item.Identity == completion.Identity);
                 if (start is null) continue;
+                if (events.Any(item => item.Identity == completion.Identity &&
+                    (completion.Id == 34 ? item.Id == 34 : item.Id is 19 or 20) && item.Time > start.Time && item.Time < completion.Time)) continue;
                 var operation = completion.Id == 34 ? "Windows download (estimated)" : "Windows install (estimated)";
                 var duration = completion.Time - start.Time;
                 metrics.Add(new OperationMetric(StableId($"{operation}|{completion.Time:O}|{completion.Identity}"), start.Time, completion.Time,

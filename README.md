@@ -6,6 +6,8 @@ The application uses the supported Windows Update Agent (WUA) COM API. Microsoft
 
 ## Current capabilities
 
+New for the next release: **Performance → Upgrade logs and reports** collects and ZIPs logs to a local folder or network share, analyzes existing logs, and generates HTML/JSON/CSV timing reports without requiring a scan. A standalone collector binary and portable desktop ZIP are included in the release workflow. See [log collection and standalone usage](docs/LOG-COLLECTION.md).
+
 - Scan one or several sources in sequence:
   - policy default
   - managed WSUS

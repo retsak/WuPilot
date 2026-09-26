@@ -194,10 +194,34 @@ jobs:
             }
           }
 
+      - name: Build standalone collectors
+        shell: pwsh
+        run: |
+          ./scripts/Build-WuPilotStandalone.ps1 -Platform x64 -Version $env:RELEASE_VERSION
+          ./scripts/Build-WuPilotStandalone.ps1 -Platform arm64 -Version $env:RELEASE_VERSION
+
+      - name: Sign standalone collectors
+        if: steps.signing.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          Get-ChildItem artifacts/standalone/*.exe | ForEach-Object {
+            & $env:SIGNTOOL_PATH sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $env:WINDOWS_SIGNING_CERTIFICATE_PATH /p $env:CERTIFICATE_PASSWORD $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $($_.Name)." }
+          }
+
+      - name: Package portable desktop apps
+        shell: pwsh
+        run: |
+          foreach ($runtime in @('win-x64', 'win-arm64')) {
+            Compress-Archive -Path "artifacts/WuPilot-$runtime/*" -DestinationPath "artifacts/standalone/WuPilot-$env:RELEASE_VERSION-$runtime-portable.zip" -Force
+          }
+
       - name: Write release checksums
         shell: pwsh
         run: |
-          Get-ChildItem artifacts/installer/WuPilot-*-setup.exe | ForEach-Object {
+          Get-ChildItem artifacts/installer/WuPilot-*-setup.exe, artifacts/standalone/*.exe, artifacts/standalone/*.zip | ForEach-Object {
             $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $($_.Name)" | Set-Content -LiteralPath "$($_.FullName).sha256" -Encoding ascii
           }
@@ -209,6 +233,7 @@ jobs:
           path: |
             artifacts/installer/WuPilot-*-setup.exe
             artifacts/installer/WuPilot-*-setup.exe.sha256
+            artifacts/standalone/*
           if-no-files-found: error
 
       - name: Create GitHub Release
@@ -217,7 +242,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = '${{ github.ref_name }}'
-          $assets = Get-ChildItem artifacts/installer/WuPilot-*-setup.exe* |
+          $assets = Get-ChildItem artifacts/installer/WuPilot-*-setup.exe*, artifacts/standalone/* |
             Select-Object -ExpandProperty FullName
           $preamble = @"
           Download the installer for your Windows architecture:
@@ -226,6 +251,8 @@ jobs:
           - `win-arm64` for Windows on Arm devices.
 
           Each installer is self-contained and requests administrator access because WuPilot performs elevated Windows Update diagnostics and repair actions. SHA-256 checksum files are included alongside the installers.
+
+          Portable ZIPs contain the full desktop app: extract all files, then run WuPilot.exe. Standalone WuPilot-Collector executables collect and analyze logs without installing WuPilot or .NET. Run with --help for usage.
           "@
 
           gh release view $tag *> $null

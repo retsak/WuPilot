@@ -8,7 +8,11 @@ Each release contains:
 
 - `WuPilot-VERSION-win-x64-setup.exe` for Intel and AMD 64-bit Windows;
 - `WuPilot-VERSION-win-arm64-setup.exe` for Windows on Arm;
-- one `.sha256` file beside each installer.
+- `WuPilot-Collector-VERSION-win-x64.exe` and `WuPilot-Collector-VERSION-win-arm64.exe`, self-contained single-file log collectors;
+- `WuPilot-VERSION-win-x64-portable.zip` and `WuPilot-VERSION-win-arm64-portable.zip`, the complete desktop app without an installer;
+- one `.sha256` file beside each artifact.
+
+See [standalone usage and log analysis](LOG-COLLECTION.md). The collector builds locally with `scripts/Build-WuPilotStandalone.ps1`. Portable desktop users must extract the entire ZIP before running WuPilot.exe.
 
 The installers use a stable application ID, so a newer release upgrades an existing installation in place. They install WuPilot under the 64-bit Program Files directory, create a Start Menu shortcut, offer an optional desktop shortcut, register an uninstaller, and can launch WuPilot after setup.
 

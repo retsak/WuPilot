@@ -22,20 +22,24 @@ internal static class ProcessRunner
 
         foreach (var argument in arguments) process.StartInfo.ArgumentList.Add(argument);
         process.Start();
-        var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-
         using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutSource.CancelAfter(timeout);
+        var outputTask = process.StandardOutput.ReadToEndAsync(timeoutSource.Token);
+        var errorTask = process.StandardError.ReadToEndAsync(timeoutSource.Token);
         try
         {
             await process.WaitForExitAsync(timeoutSource.Token).ConfigureAwait(false);
+            await Task.WhenAll(outputTask, errorTask).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            if (!process.HasExited) process.Kill(entireProcessTree: true);
-            if (cancellationToken.IsCancellationRequested) throw;
-            return new ProcessResult(-1, await outputTask.ConfigureAwait(false), $"Command timed out after {timeout}.");
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { /* Process exited between the check and kill. */ }
+            // Observe both readers; inherited pipe handles must not extend the timeout indefinitely.
+            try { await Task.WhenAll(outputTask, errorTask).ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+            cancellationToken.ThrowIfCancellationRequested();
+            return new ProcessResult(-1, string.Empty, $"Command timed out after {timeout}.");
         }
 
         return new ProcessResult(process.ExitCode, await outputTask.ConfigureAwait(false), await errorTask.ConfigureAwait(false));
