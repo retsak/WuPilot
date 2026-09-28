@@ -489,6 +489,10 @@
                                         <Button x:Name="OpenLogReportButton" Content="Open report" Click="OpenLogReport_Click" IsEnabled="False" />
                                     </StackPanel>
                                     <TextBlock x:Name="LogCollectionStatus" Text="Ready. No scan required. Collection can run alongside update operations." TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                    <Button x:Name="AnalyzeBundleButton" Content="Load bundle timings and regenerate report" Click="AnalyzeBundle_Click" />
+                                    <TextBlock Text="Historical update phases" FontWeight="SemiBold" Margin="0,12,0,0" />
+                                    <TextBlock x:Name="BundleTimingStatus" Text="Collect logs or load an extracted bundle to see historical update phases. Uses the KB/update ID and date filters." TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                    <ItemsControl ItemsSource="{x:Bind VisibleUpdateTimelines}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Margin="0,6,0,12" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
                                     <TextBlock Text="Operation details" FontWeight="SemiBold" Margin="0,12,0,0" />
                                     <TextBlock x:Name="OperationDetailTitle" Text="Select an operation to inspect its diagnostics." FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
                                     <TextBlock x:Name="OperationDetailText" Text="No operation selected." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

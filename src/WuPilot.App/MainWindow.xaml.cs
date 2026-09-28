@@ -1732,6 +1732,38 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception exception) { await ShowMessageAsync("Restore stopped", exception.Message); }
     }
 
+    private IReadOnlyList<UpgradeTimeline> _bundleTimelines = [];
+    public ObservableCollection<string> VisibleUpdateTimelines { get; } = [];
+
+    private async Task LoadBundlePerformanceAsync(string bundle)
+    {
+        var evidence = await UpgradeReportService.ReadBundleTimelinesAsync(bundle, CancellationToken.None);
+        _bundleTimelines = evidence.Updates;
+        BundleTimingStatus.Text = $"{evidence.Updates.Count} update attempts from {bundle}" +
+            (evidence.Warnings.Count == 0 ? "" : "\n" + string.Join("\n", evidence.Warnings));
+        ApplyPerformanceFilter();
+    }
+
+    private async void AnalyzeBundle_Click(object sender, RoutedEventArgs e)
+    {
+        if (_collectingLogs) return;
+        AnalyzeBundleButton.IsEnabled = false;
+        CollectLogsButton.IsEnabled = false;
+        try
+        {
+            var bundle = LogInputBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(bundle)) throw new ArgumentException("Enter an extracted bundle folder in Analyze existing logs.");
+            await LoadBundlePerformanceAsync(bundle);
+            var destination = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WuPilot", "Reports", Guid.NewGuid().ToString("N"));
+            var report = await UpgradeReportService.RegenerateAsync(bundle, destination, null, CancellationToken.None, PerformanceUpdateBox.Text);
+            OpenLogReportButton.Tag = report;
+            OpenLogReportButton.IsEnabled = true;
+            LogCollectionStatus.Text = $"Report regenerated from retained evidence: {report}";
+        }
+        catch (Exception exception) { BundleTimingStatus.Text = $"Bundle analysis failed: {exception.Message}"; }
+        finally { AnalyzeBundleButton.IsEnabled = true; CollectLogsButton.IsEnabled = true; }
+    }
+
     private void PerformanceUpdate_Changed(object sender, TextChangedEventArgs e)
     {
         if (PerformanceSummaryText is null) return;
@@ -1742,6 +1774,10 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
         var selection = PerformanceUpdateBox.Text;
         var days = SelectedPerformanceDays();
+        string Duration(TimeSpan? span) => span is null ? "Unavailable" : $"{span.Value.TotalSeconds:0} s";
+        Replace(VisibleUpdateTimelines, _bundleTimelines.Where(t => UpdateTimingFilter.Matches(selection, t.UpdateId, t.Title) &&
+            (!string.IsNullOrWhiteSpace(selection) || days == 0 || t.AttemptedAt >= DateTimeOffset.Now.AddDays(-days))).Select(t =>
+            $"{t.Title} | {t.AttemptedAt:yyyy-MM-dd HH:mm:ss zzz}\nUpdate ID: {t.UpdateId}\nDownload: {Duration(t.Download.Duration)} | Install to restart required: {Duration(t.Install.Duration)}\nWaiting for restart: {Duration(t.WaitingForRestart)} | Restart to package installed: {Duration(t.Reboot.Duration)}\n{t.Status} | Log boundaries / correlated restart estimate; not desktop readiness."));
         Replace(VisibleMetrics, _allMetrics.Where(item => UpdateTimingFilter.Matches(selection, item.Metric.UpdateId, item.Metric.Title) && (!string.IsNullOrWhiteSpace(selection) || days == 0 || item.Metric.CompletedAt >= DateTimeOffset.Now.AddDays(-days))));
         PerformanceSummaryText.Text = $"{VisibleMetrics.Count} matching operations | {(string.IsNullOrWhiteSpace(selection) ? "Selected date range" : "All retained history")} | Missing timings remain unavailable";
     }
@@ -1815,6 +1851,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         if (_collectingLogs) return;
         _collectingLogs = true;
         CollectLogsButton.IsEnabled = false;
+        AnalyzeBundleButton.IsEnabled = false;
         using var cancellation = new CancellationTokenSource();
         RoutedEventHandler cancel = (_, _) => cancellation.Cancel();
         CancelLogCollectionButton.Click += cancel;
@@ -1825,10 +1862,11 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             if (string.IsNullOrEmpty(destination)) destination = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "WuPilot", "LogBundles");
             var input = string.IsNullOrWhiteSpace(LogInputBox.Text) ? null : LogInputBox.Text.Trim();
             var result = await new LogCollectionService().CollectAsync(new(destination, input, SelectedUpdate: PerformanceUpdateBox.Text), new Progress<string>(message => LogCollectionStatus.Text = message), cancellation.Token);
-            LogCollectionStatus.Text = $"{result.Collected} collected; {result.Unavailable} missing/limited. ZIP: {result.DeliveredZip ?? result.LocalZip}\nReport: {result.ReportPath}\n{result.DeliveryError}";
+            LogCollectionStatus.Text = $"{result.Collected} collected; {result.Missing} missing; {result.Limited} limited; {result.Failed} failed. ZIP: {result.DeliveredZip ?? result.LocalZip}\nReport: {result.ReportPath}\n{result.DeliveryError}";
             Log(LogCollectionStatus.Text);
             OpenLogReportButton.Tag = result.ReportPath;
             OpenLogReportButton.IsEnabled = true;
+            await LoadBundlePerformanceAsync(System.IO.Path.GetDirectoryName(result.ReportPath)!);
         }
         catch (OperationCanceledException) { LogCollectionStatus.Text = "Collection cancelled. Partial local files may remain in LocalAppData/WuPilot/LogBundles."; }
         catch (Exception exception) { LogCollectionStatus.Text = $"Log collection failed: {exception.Message}"; Log(LogCollectionStatus.Text); }
@@ -1837,6 +1875,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             CancelLogCollectionButton.Click -= cancel;
             CancelLogCollectionButton.IsEnabled = false;
             CollectLogsButton.IsEnabled = true;
+            AnalyzeBundleButton.IsEnabled = true;
             _collectingLogs = false;
         }
     }

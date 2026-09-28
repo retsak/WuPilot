@@ -14,7 +14,12 @@ namespace WuPilot.Infrastructure.Windows.Export;
 
 public sealed record LogCollectionOptions(string Destination, string? InputDirectory = null, int Parallelism = 4, long MaxFileBytes = 512 * 1024 * 1024, int MaxFiles = 1000, string? SourceTimeZoneId = null, string? SelectedUpdate = null);
 public sealed record CollectedLog(string Source, string? File, string Status, long Bytes, double Seconds, string? Sha256, string? Detail);
-public sealed record LogCollectionResult(string LocalZip, string? DeliveredZip, string ReportPath, string? DeliveryError, int Collected, int Unavailable);
+public sealed record LogCollectionResult(string LocalZip, string? DeliveredZip, string ReportPath, string? DeliveryError, int Collected, int Unavailable)
+{
+    public int Missing { get; init; }
+    public int Limited { get; init; }
+    public int Failed { get; init; }
+}
 
 public sealed class LogCollectionService
 {
@@ -52,7 +57,7 @@ public sealed class LogCollectionService
                 var files = Directory.EnumerateFiles(root, "*", new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false });
                 foreach (var file in files)
                 {
-                    if (!new[] { ".log", ".xml", ".json", ".etl", ".evtx", ".txt", ".cab", ".dmp", ".bak" }.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase)) continue;
+                    if (!UpgradeReportService.IsUpdateAgentLog(file) && !new[] { ".log", ".xml", ".json", ".etl", ".evtx", ".txt", ".cab", ".dmp", ".bak" }.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase)) continue;
                     if (inputs.Count >= options.MaxFiles) { manifest.Add(new(root, null, "Limit", 0, 0, null, "File count limit reached; collection is partial.")); break; }
                     inputs.Add(file);
                 }
@@ -184,7 +189,12 @@ public sealed class LogCollectionService
             delivered = destination;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException) { deliveryError = $"Delivery incomplete: {ex.Message}. Local ZIP retained. Any destination .partial file is incomplete."; }
-        return new(zip, delivered, report, deliveryError, manifest.Count(m => m.Status == "Collected"), manifest.Count(m => m.Status != "Collected"));
+        return new(zip, delivered, report, deliveryError, manifest.Count(m => m.Status == "Collected"), manifest.Count(m => m.Status != "Collected"))
+        {
+            Missing = manifest.Count(m => m.Status == "Missing"),
+            Limited = manifest.Count(m => m.Status == "Limit"),
+            Failed = manifest.Count(m => m.Status is not ("Collected" or "Missing" or "Limit"))
+        };
     }
 
     private static IEnumerable<string> ReadLines(string path, CancellationToken token)

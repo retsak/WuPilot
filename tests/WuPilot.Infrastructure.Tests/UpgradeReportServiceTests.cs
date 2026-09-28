@@ -6,6 +6,17 @@ namespace WuPilot.Infrastructure.Tests;
 public sealed class UpgradeReportServiceTests
 {
     [Theory]
+    [InlineData("UpdateAgent.log", true)]
+    [InlineData("0021-UpdateAgent.Old.log", true)]
+    [InlineData("UpdateAgent.20260918.log", true)]
+    [InlineData("UpdateAgent.log.1", true)]
+    [InlineData("UpdateAgent.log.bak", true)]
+    [InlineData("NotUpdateAgent.log", false)]
+    [InlineData("UpdateAgent.dll", false)]
+    public void RecognizesOnlyCurrentAndRotatedTextLogs(string name, bool expected) =>
+        Assert.Equal(expected, UpgradeReportService.IsUpdateAgentLog(name));
+
+    [Theory]
     [InlineData("5112", "0x0", "PackageInstalled")]
     [InlineData("112", "0x0", null)]
     [InlineData("5112", "0x80070002", null)]

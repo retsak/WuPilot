@@ -16,7 +16,7 @@ public sealed record UpgradeSystemEvent(DateTimeOffset Time, string Kind, string
 public static partial class UpgradeTimelineAnalyzer
 {
     public static IReadOnlyList<UpgradeTimeline> Analyze(string source, IEnumerable<string> lines,
-        IReadOnlyList<UpgradeSystemEvent> events, TimeZoneInfo sourceZone)
+        IReadOnlyList<UpgradeSystemEvent> events, TimeZoneInfo sourceZone, int maxLines = 500_000)
     {
         var attempts = new List<Attempt>();
         var currentById = new Dictionary<string, Attempt>(StringComparer.OrdinalIgnoreCase);
@@ -25,7 +25,7 @@ public static partial class UpgradeTimelineAnalyzer
         foreach (var line in lines)
         {
             lineNumber++;
-            if (lineNumber > 500_000) break;
+            if (lineNumber > maxLines) break;
             if (line.Length < 19 || !DateTime.TryParseExact(line[..19], "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var local)) continue;
             // Wall-clock ambiguity must not silently become an exact correlation across a DST transition.
             if (sourceZone.IsInvalidTime(local) || sourceZone.IsAmbiguousTime(local)) { current = null; continue; }

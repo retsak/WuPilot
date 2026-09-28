@@ -31,7 +31,44 @@ public static class UpgradeReportService
     {
         var zone = timeZoneId is null ? TimeZoneInfo.Local : TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
         var warnings = new List<string>();
-        if (analyses.Any(a => a.Truncated)) warnings.Add("Some text logs reached the parsing limit. Consult the retained raw logs; earlier or later attempts may be unavailable in this report.");
+        foreach (var analysis in analyses.Where(a => a.Truncated))
+            warnings.Add($"Supporting-log analysis limit reached: {analysis.Activity.FirstOrDefault()?.Source ?? analysis.Findings.FirstOrDefault()?.Source ?? "Unknown source"} ({analysis.LinesRead:N0} lines examined). Raw file retained. UpdateAgent timing analysis is independent and scans the full file.");
+        var evidence = await ReadTimelinesAsync(bundle, manifest, zone, token).ConfigureAwait(false);
+        warnings.AddRange(evidence.Warnings);
+        var ordered = evidence.Updates.Where(t => UpdateTimingFilter.Matches(selectedUpdate, t.UpdateId, t.Title)).ToArray();
+        await File.WriteAllTextAsync(Path.Combine(destination, "phase-summary.json"), JsonSerializer.Serialize(new { timeZone = zone.Id, selectedUpdate, warnings, updates = ordered }, JsonOptions), token).ConfigureAwait(false);
+        var csv = new StringBuilder("UpdateId,Title,AttemptedAt,DownloadSeconds,InstallSeconds,WaitSeconds,RebootSeconds,Status\r\n");
+        string Cell(string value) => "\"" + value.Replace("\"", "\"\"") + "\"";
+        string Seconds(TimeSpan? value) => value?.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture) ?? "";
+        foreach (var t in ordered)
+            csv.AppendLine(string.Join(',', new[] { t.UpdateId, t.Title, t.AttemptedAt.ToString("O"), Seconds(t.Download.Duration), Seconds(t.Install.Duration), Seconds(t.WaitingForRestart), Seconds(t.Reboot.Duration), t.Status }.Select(Cell)));
+        await File.WriteAllTextAsync(Path.Combine(destination, "update-timings.csv"), csv.ToString(), token).ConfigureAwait(false);
+        var report = Path.Combine(destination, "report.html");
+        await File.WriteAllTextAsync(report, BuildHtml(ordered, analyses, metrics.Where(m => UpdateTimingFilter.Matches(selectedUpdate, m.UpdateId, m.Title)).ToArray(), manifest, zone, warnings, selectedUpdate), token).ConfigureAwait(false);
+        return report;
+    }
+
+    public sealed record TimelineEvidence(IReadOnlyList<UpgradeTimeline> Updates, IReadOnlyList<string> Warnings);
+
+    public static bool IsUpdateAgentLog(string path) => System.Text.RegularExpressions.Regex.IsMatch(
+        Path.GetFileName(path), @"^(?:[0-9]+-)*UpdateAgent(?:[._-][a-z0-9_-]+)*\.(?:log|bak)(?:\.[0-9]+)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    public static async Task<TimelineEvidence> ReadBundleTimelinesAsync(string bundle, CancellationToken token)
+    {
+        var manifest = await ReadAsync<CollectedLog[]>(Path.Combine(bundle, "manifest.json"), token).ConfigureAwait(false) ?? [];
+        var zone = TimeZoneInfo.Local;
+        if (File.Exists(Path.Combine(bundle, "phase-summary.json")))
+        {
+            using var context = await ReadAsync<JsonDocument>(Path.Combine(bundle, "phase-summary.json"), token).ConfigureAwait(false);
+            if (context?.RootElement.TryGetProperty("timeZone", out var saved) == true && saved.GetString() is { } id)
+                zone = TimeZoneInfo.FindSystemTimeZoneById(id);
+        }
+        return await ReadTimelinesAsync(bundle, manifest, zone, token).ConfigureAwait(false);
+    }
+
+    private static Task<TimelineEvidence> ReadTimelinesAsync(string bundle, IReadOnlyCollection<CollectedLog> manifest, TimeZoneInfo zone, CancellationToken token) => Task.Run(() =>
+    {
+        var warnings = new List<string>();
         var events = new List<UpgradeSystemEvent>();
         foreach (var file in manifest.Where(m => m.Status == "Collected" && m.File?.EndsWith(".evtx", StringComparison.OrdinalIgnoreCase) == true))
         {
@@ -40,17 +77,16 @@ public static class UpgradeReportService
             { warnings.Add($"Could not read {file.File}: {ex.Message}"); }
         }
         var timelines = new List<UpgradeTimeline>();
-        foreach (var file in manifest.Where(m => m.Status == "Collected" && m.File?.EndsWith("UpdateAgent.log", StringComparison.OrdinalIgnoreCase) == true))
+        foreach (var file in manifest.Where(m => m.Status == "Collected" && m.File is not null && (IsUpdateAgentLog(m.Source) || IsUpdateAgentLog(m.File))))
         {
             token.ThrowIfCancellationRequested();
-            timelines.AddRange(UpgradeTimelineAnalyzer.Analyze(file.File!, ReadLines(ResolveSource(bundle, file.File!), token), events, zone));
+            try { timelines.AddRange(UpgradeTimelineAnalyzer.Analyze(file.File!, ReadLines(ResolveSource(bundle, file.File!), token), events, zone, int.MaxValue)); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { warnings.Add($"Could not read {file.File}: {ex.Message}"); }
         }
-        var ordered = timelines.Where(t => UpdateTimingFilter.Matches(selectedUpdate, t.UpdateId, t.Title)).OrderByDescending(t => t.Milestones.Count).DistinctBy(t => (t.UpdateId, t.AttemptedAt)).OrderByDescending(t => t.AttemptedAt).ToArray();
-        await File.WriteAllTextAsync(Path.Combine(destination, "phase-summary.json"), JsonSerializer.Serialize(new { timeZone = zone.Id, selectedUpdate, warnings, updates = ordered }, JsonOptions), token).ConfigureAwait(false);
-        var report = Path.Combine(destination, "report.html");
-        await File.WriteAllTextAsync(report, BuildHtml(ordered, analyses, metrics.Where(m => UpdateTimingFilter.Matches(selectedUpdate, m.UpdateId, m.Title)).ToArray(), manifest, zone, warnings, selectedUpdate), token).ConfigureAwait(false);
-        return report;
-    }
+        var ordered = timelines.OrderByDescending(t => t.Milestones.Count).DistinctBy(t => (t.UpdateId, t.AttemptedAt)).OrderByDescending(t => t.AttemptedAt).ToArray();
+        return new TimelineEvidence(ordered, warnings);
+    }, token);
 
     internal static string ResolveSource(string bundle, string relative)
     {
@@ -101,7 +137,7 @@ public static class UpgradeReportService
             """);
         if (!string.IsNullOrWhiteSpace(selectedUpdate)) html.Append($"<p class='notice'>Selected KB / update ID: <strong>{H(selectedUpdate)}</strong>. All retained matching attempts are shown; supporting raw logs cover all updates.</p>");
         if (timelines.Count == 0)
-            html.Append("<div class='notice'><strong>No complete OS update timeline was identified for this selection.</strong><p>The available logs do not contain recognizable UpdateAgent phase boundaries. Retained WuPilot call timings are available below; they are not a substitute for a full update/restart timeline.</p></div>");
+            html.Append("<div class='notice'><strong>No complete OS update timeline was identified for this selection.</strong><p>No matching phase boundaries were recognized in the current or rotated UpdateAgent logs. Missing files and read failures are listed under collection coverage. Retained WuPilot call timings are available below; they are not a substitute for a full update/restart timeline.</p></div>");
         for (var i = 0; i < timelines.Count; i++)
         {
             var timeline = timelines[i];
@@ -136,7 +172,7 @@ public static class UpgradeReportService
         }
         html.Append("</details><details><summary>Raw log activity windows</summary><p>First-to-last observed entries, not phase durations. Older setup logs are intentionally kept out of the current update timeline.</p><div class='scroll'><table><tr><th>Source / phase</th><th>First</th><th>Last</th><th>Observed span</th></tr>");
         foreach (var a in analyses.SelectMany(a => a.Activity)) html.Append($"<tr><td>{H(a.Source)}<br>{H(a.Phase)}</td><td>{H(a.First)}</td><td>{H(a.Last)}</td><td>{H(Duration(a.ObservedSpan))}</td></tr>");
-        html.Append($"</table></div></details><details><summary>Collection coverage · {manifest.Count(m => m.Status == "Collected")} collected / {manifest.Count(m => m.Status != "Collected")} missing or limited</summary><div class='scroll'><table><tr><th>Source</th><th>Status</th><th>Details</th></tr>");
+        html.Append($"</table></div></details><details><summary>Collection coverage · {manifest.Count(m => m.Status == "Collected")} collected / {manifest.Count(m => m.Status == "Missing")} missing / {manifest.Count(m => m.Status == "Limit")} limited / {manifest.Count(m => m.Status is not ("Collected" or "Missing" or "Limit"))} failed</summary><div class='scroll'><table><tr><th>Source</th><th>Status</th><th>Details</th></tr>");
         foreach (var m in manifest.OrderBy(m => m.Source)) html.Append($"<tr><td>{H(m.Source)}</td><td>{H(m.Status)}</td><td>{H(m.Detail)}</td></tr>");
         return html.Append("</table></div></details></section><footer>Generated by WuPilot from collected evidence. Reboot completion requires matching update evidence after startup; reaching kernel boot alone never completes the phase. For a feature upgrade with multiple packages, a single package completion is not proof the entire upgrade finished. Source logs may contain identifiers and user paths.</footer></main></body></html>").ToString();
     }

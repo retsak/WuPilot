@@ -76,7 +76,9 @@ public sealed class LogCollectionServiceTests : IDisposable
         var oldId = "916031E1-9D13-48E9-A262-C8A0DB93FBAC";
         var newId = "A16031E1-9D13-48E9-A262-C8A0DB93FBAC";
         string Attempt(string date, string id, string kb) => $"{date} 06:00:00 Initializing UpdateId = [{id}.1]\n{date} 06:00:01 GenerateDownloadRequest: Enter\n{date} 06:00:02 Installing feature: Feature: CumulativeUpdate_{kb}\n{date} 06:01:01 ReportEventDownloadRequestEnd: DownloadComplete = [TRUE]\n{date} 06:02:00 Install: Enter\n{date} 06:04:00 Reboot required: [TRUE]\n";
-        await File.WriteAllTextAsync(Path.Combine(input, "UpdateAgent.log"), Attempt("2026-01-01", oldId, "KB12345") + Attempt("2026-09-01", newId, "KB67890"));
+        await File.WriteAllTextAsync(Path.Combine(input, "UpdateAgent.Old.log"), Attempt("2026-01-01", oldId, "KB12345"));
+        await File.WriteAllTextAsync(Path.Combine(input, "UpdateAgent.log.1"), Attempt("2026-09-01", newId, "KB67890"));
+        await File.WriteAllTextAsync(Path.Combine(input, "UpdateAgent.log"), "2026-09-25 06:00:00 UpdateAgent logging starts.");
         await File.WriteAllBytesAsync(Path.Combine(input, "CbsPersist.cab"), [1, 2]);
         await File.WriteAllBytesAsync(Path.Combine(input, "setupmem.dmp"), [3, 4]);
         var result = await new LogCollectionService(Folder("local")).CollectAsync(new(Folder("share"), input, SourceTimeZoneId: "UTC", SelectedUpdate: "12345"), null, default);
@@ -85,7 +87,14 @@ public sealed class LogCollectionServiceTests : IDisposable
         var update = Assert.Single(summary.RootElement.GetProperty("updates").EnumerateArray());
         Assert.Equal(oldId, update.GetProperty("updateId").GetString());
         Assert.Equal("00:01:00", update.GetProperty("download").GetProperty("duration").GetString());
-        Assert.Equal(3, result.Collected);
+        Assert.Equal(5, result.Collected);
+        var performance = await UpgradeReportService.ReadBundleTimelinesAsync(bundle, default);
+        Assert.Equal(2, performance.Updates.Count);
+        Assert.Empty(performance.Warnings);
+        Assert.Contains("UpdateAgent.Old.log", update.GetProperty("download").GetProperty("start").GetProperty("source").GetString());
+        var csv = await File.ReadAllTextAsync(Path.Combine(bundle, "update-timings.csv"));
+        Assert.Contains(oldId, csv);
+        Assert.DoesNotContain(newId, csv);
         var regenerated = Folder("regenerated");
         await UpgradeReportService.RegenerateAsync(bundle, regenerated, "UTC", default, newId);
         using var newer = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(regenerated, "phase-summary.json")));

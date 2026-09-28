@@ -40,7 +40,7 @@ try
         return 0;
     }
     var result = await new LogCollectionService().CollectAsync(new(destination, input, parallel, MaxFileBytes: maxFileBytes, MaxFiles: maxFiles, SourceTimeZoneId: timeZone, SelectedUpdate: selectedUpdate), new ConsoleProgress(), cancellation.Token);
-    Console.WriteLine($"Local ZIP: {result.LocalZip}\nDelivered ZIP: {result.DeliveredZip}\nReport: {result.ReportPath}\nCollected: {result.Collected}; missing/limited: {result.Unavailable}");
+    Console.WriteLine($"Local ZIP: {result.LocalZip}\nDelivered ZIP: {result.DeliveredZip}\nReport: {result.ReportPath}\nCollected: {result.Collected}; missing: {result.Missing}; limited: {result.Limited}; failed: {result.Failed}");
     if (result.DeliveryError is not null) { Console.Error.WriteLine(result.DeliveryError); return 3; }
     return result.Unavailable > 0 ? 4 : 0;
 }

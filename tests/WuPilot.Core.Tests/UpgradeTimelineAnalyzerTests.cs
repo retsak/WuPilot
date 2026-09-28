@@ -21,6 +21,15 @@ public sealed class UpgradeTimelineAnalyzerTests
     private static readonly TimeZoneInfo Zone = TimeZoneInfo.CreateCustomTimeZone("TestCentral", TimeSpan.FromHours(-5), "Test", "Test");
 
     [Fact]
+    public void FullTimingScanIncludesBoundariesBeyondSupportingLogLimit()
+    {
+        var lines = Enumerable.Repeat("Supporting detail", 500_001).Concat(Lines);
+        var timeline = Assert.Single(UpgradeTimelineAnalyzer.Analyze("UpdateAgent.Old.log", lines, [], Zone, int.MaxValue));
+        Assert.Equal(TimeSpan.FromSeconds(252), timeline.Download.Duration);
+        Assert.Contains("UpdateAgent.Old.log:500003", timeline.Download.Start!.Source);
+    }
+
+    [Fact]
     public void SeparatesWaitingAndIncludesAllBootsThroughPackageCompletion()
     {
         var result = Assert.Single(UpgradeTimelineAnalyzer.Analyze("UpdateAgent.log", Lines,

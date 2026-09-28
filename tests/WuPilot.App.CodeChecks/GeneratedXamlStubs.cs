@@ -11,6 +11,8 @@ public partial class App
 
 public sealed partial class MainWindow
 {
+    private readonly Button AnalyzeBundleButton = null!;
+    private readonly TextBlock BundleTimingStatus = null!;
     private readonly TextBox PerformanceUpdateBox = null!;
     private readonly TextBox LogDestinationBox = null!;
     private readonly TextBox LogInputBox = null!;
