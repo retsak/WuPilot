@@ -11,6 +11,7 @@ public partial class App
 
 public sealed partial class MainWindow
 {
+    private readonly TextBox PerformanceUpdateBox = null!;
     private readonly TextBox LogDestinationBox = null!;
     private readonly TextBox LogInputBox = null!;
     private readonly TextBlock LogCollectionStatus = null!;

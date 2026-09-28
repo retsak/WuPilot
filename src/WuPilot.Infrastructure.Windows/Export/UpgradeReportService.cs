@@ -12,7 +12,7 @@ public static class UpgradeReportService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public static Task<string> RegenerateAsync(string bundle, string destination, string? timeZoneId, CancellationToken token) => Task.Run(async () =>
+    public static Task<string> RegenerateAsync(string bundle, string destination, string? timeZoneId, CancellationToken token, string? selectedUpdate = null) => Task.Run(async () =>
     {
         var analyses = await ReadAsync<UpgradeLogAnalysis[]>(Path.Combine(bundle, "analysis.json"), token) ?? [];
         var metrics = await ReadAsync<OperationMetric[]>(Path.Combine(bundle, "operation-metrics.json"), token) ?? [];
@@ -23,14 +23,15 @@ public static class UpgradeReportService
             if (context?.RootElement.TryGetProperty("timeZone", out var savedZone) == true) timeZoneId = savedZone.GetString();
         }
         Directory.CreateDirectory(destination);
-        return await WriteAsync(bundle, destination, analyses, metrics, manifest, timeZoneId, token).ConfigureAwait(false);
+        return await WriteAsync(bundle, destination, analyses, metrics, manifest, timeZoneId, token, selectedUpdate).ConfigureAwait(false);
     }, token);
 
     internal static async Task<string> WriteAsync(string bundle, string destination, IReadOnlyList<UpgradeLogAnalysis> analyses,
-        IReadOnlyList<OperationMetric> metrics, IReadOnlyCollection<CollectedLog> manifest, string? timeZoneId, CancellationToken token)
+        IReadOnlyList<OperationMetric> metrics, IReadOnlyCollection<CollectedLog> manifest, string? timeZoneId, CancellationToken token, string? selectedUpdate = null)
     {
         var zone = timeZoneId is null ? TimeZoneInfo.Local : TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
         var warnings = new List<string>();
+        if (analyses.Any(a => a.Truncated)) warnings.Add("Some text logs reached the parsing limit. Consult the retained raw logs; earlier or later attempts may be unavailable in this report.");
         var events = new List<UpgradeSystemEvent>();
         foreach (var file in manifest.Where(m => m.Status == "Collected" && m.File?.EndsWith(".evtx", StringComparison.OrdinalIgnoreCase) == true))
         {
@@ -44,10 +45,10 @@ public static class UpgradeReportService
             token.ThrowIfCancellationRequested();
             timelines.AddRange(UpgradeTimelineAnalyzer.Analyze(file.File!, ReadLines(ResolveSource(bundle, file.File!), token), events, zone));
         }
-        var ordered = timelines.DistinctBy(t => (t.UpdateId, t.AttemptedAt)).OrderByDescending(t => t.AttemptedAt).ToArray();
-        await File.WriteAllTextAsync(Path.Combine(destination, "phase-summary.json"), JsonSerializer.Serialize(new { timeZone = zone.Id, warnings, updates = ordered }, JsonOptions), token).ConfigureAwait(false);
+        var ordered = timelines.Where(t => UpdateTimingFilter.Matches(selectedUpdate, t.UpdateId, t.Title)).OrderByDescending(t => t.Milestones.Count).DistinctBy(t => (t.UpdateId, t.AttemptedAt)).OrderByDescending(t => t.AttemptedAt).ToArray();
+        await File.WriteAllTextAsync(Path.Combine(destination, "phase-summary.json"), JsonSerializer.Serialize(new { timeZone = zone.Id, selectedUpdate, warnings, updates = ordered }, JsonOptions), token).ConfigureAwait(false);
         var report = Path.Combine(destination, "report.html");
-        await File.WriteAllTextAsync(report, BuildHtml(ordered, analyses, metrics, manifest, zone, warnings), token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(report, BuildHtml(ordered, analyses, metrics.Where(m => UpdateTimingFilter.Matches(selectedUpdate, m.UpdateId, m.Title)).ToArray(), manifest, zone, warnings, selectedUpdate), token).ConfigureAwait(false);
         return report;
     }
 
@@ -78,7 +79,7 @@ public static class UpgradeReportService
     }
 
     internal static string BuildHtml(IReadOnlyList<UpgradeTimeline> timelines, IReadOnlyList<UpgradeLogAnalysis> analyses,
-        IReadOnlyList<OperationMetric> metrics, IReadOnlyCollection<CollectedLog> manifest, TimeZoneInfo zone, IReadOnlyList<string> warnings)
+        IReadOnlyList<OperationMetric> metrics, IReadOnlyCollection<CollectedLog> manifest, TimeZoneInfo zone, IReadOnlyList<string> warnings, string? selectedUpdate = null)
     {
         string Stamp(DateTimeOffset? time) => time is null ? "Not recorded" : TimeZoneInfo.ConvertTime(time.Value, zone).ToString("MMM d, yyyy · HH:mm:ss", CultureInfo.InvariantCulture);
         var html = new StringBuilder("""
@@ -98,13 +99,14 @@ public static class UpgradeReportService
             </style></head><body><main><div class="brand">WUPILOT / UPDATE TIMELINE</div><h1>Windows update, in three phases</h1>
             <p class="muted">Download. Install until a restart is required. Restart until the update finishes.</p>
             """);
+        if (!string.IsNullOrWhiteSpace(selectedUpdate)) html.Append($"<p class='notice'>Selected KB / update ID: <strong>{H(selectedUpdate)}</strong>. All retained matching attempts are shown; supporting raw logs cover all updates.</p>");
         if (timelines.Count == 0)
-            html.Append("<div class='notice'><strong>No complete OS update timeline was identified.</strong><p>The available logs do not contain recognizable UpdateAgent phase boundaries. Retained WuPilot call timings are available below; they are not a substitute for a full update/restart timeline.</p></div>");
+            html.Append("<div class='notice'><strong>No complete OS update timeline was identified for this selection.</strong><p>The available logs do not contain recognizable UpdateAgent phase boundaries. Retained WuPilot call timings are available below; they are not a substitute for a full update/restart timeline.</p></div>");
         for (var i = 0; i < timelines.Count; i++)
         {
             var timeline = timelines[i];
             if (i > 0) html.Append("<details><summary>Earlier update attempt · " + H(Stamp(timeline.AttemptedAt)) + "</summary>");
-            html.Append($"<section class='attempt'><div class='heading'><div><h2>{H(timeline.Title)}</h2><p class='muted'>{H(Stamp(timeline.AttemptedAt))}{(i == 0 ? " · Latest recognized attempt" : "")}</p></div><span class='badge{(timeline.Reboot.End is null ? " unknown" : "")}'>{H(timeline.Status)}</span></div><div class='phases'>");
+            html.Append($"<section class='attempt'><div class='heading'><div><h2>{H(timeline.Title)}</h2><p class='muted'>{H(Stamp(timeline.AttemptedAt))}{(i == 0 ? " · Latest matching attempt" : "")}</p></div><span class='badge{(timeline.Reboot.End is null ? " unknown" : "")}'>{H(timeline.Status)}</span></div><div class='phases'>");
             var phases = new[] { timeline.Download, timeline.Install, timeline.Reboot };
             for (var j = 0; j < phases.Length; j++)
             {

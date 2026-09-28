@@ -58,5 +58,42 @@ public sealed class LogCollectionServiceTests : IDisposable
         Assert.Empty(Directory.GetFiles(destination));
     }
 
+    [Fact]
+    public void ProbesCurrentAndRetainedSetupAndServicingEvidence()
+    {
+        var roots = LogCollectionService.DefaultRoots(@"C:\Windows");
+        Assert.Contains(@"C:\Windows.old\$WINDOWS.~BT\Sources\Panther", roots);
+        Assert.Contains(@"C:\Windows.old\$WINDOWS.~BT\Sources\Rollback", roots);
+        Assert.Contains(@"C:\Windows.old\Windows\Panther", roots);
+        Assert.Contains(@"C:\Windows\Logs\CBS", roots);
+        Assert.Contains(@"C:\Windows.old\Windows\System32\winevt\Logs\Setup.evtx", roots);
+    }
+
+    [Fact]
+    public async Task SelectedOlderUpdateSurvivesNewerUpdateAndRawEvidenceIsRetained()
+    {
+        var input = Folder("input");
+        var oldId = "916031E1-9D13-48E9-A262-C8A0DB93FBAC";
+        var newId = "A16031E1-9D13-48E9-A262-C8A0DB93FBAC";
+        string Attempt(string date, string id, string kb) => $"{date} 06:00:00 Initializing UpdateId = [{id}.1]\n{date} 06:00:01 GenerateDownloadRequest: Enter\n{date} 06:00:02 Installing feature: Feature: CumulativeUpdate_{kb}\n{date} 06:01:01 ReportEventDownloadRequestEnd: DownloadComplete = [TRUE]\n{date} 06:02:00 Install: Enter\n{date} 06:04:00 Reboot required: [TRUE]\n";
+        await File.WriteAllTextAsync(Path.Combine(input, "UpdateAgent.log"), Attempt("2026-01-01", oldId, "KB12345") + Attempt("2026-09-01", newId, "KB67890"));
+        await File.WriteAllBytesAsync(Path.Combine(input, "CbsPersist.cab"), [1, 2]);
+        await File.WriteAllBytesAsync(Path.Combine(input, "setupmem.dmp"), [3, 4]);
+        var result = await new LogCollectionService(Folder("local")).CollectAsync(new(Folder("share"), input, SourceTimeZoneId: "UTC", SelectedUpdate: "12345"), null, default);
+        var bundle = Path.GetDirectoryName(result.ReportPath)!;
+        using var summary = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(bundle, "phase-summary.json")));
+        var update = Assert.Single(summary.RootElement.GetProperty("updates").EnumerateArray());
+        Assert.Equal(oldId, update.GetProperty("updateId").GetString());
+        Assert.Equal("00:01:00", update.GetProperty("download").GetProperty("duration").GetString());
+        Assert.Equal(3, result.Collected);
+        var regenerated = Folder("regenerated");
+        await UpgradeReportService.RegenerateAsync(bundle, regenerated, "UTC", default, newId);
+        using var newer = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(regenerated, "phase-summary.json")));
+        Assert.Equal(newId, Assert.Single(newer.RootElement.GetProperty("updates").EnumerateArray()).GetProperty("updateId").GetString());
+        await UpgradeReportService.RegenerateAsync(bundle, regenerated, "UTC", default, "KB00000");
+        using var missing = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(regenerated, "phase-summary.json")));
+        Assert.Empty(missing.RootElement.GetProperty("updates").EnumerateArray());
+    }
+
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
 }

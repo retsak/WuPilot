@@ -12,7 +12,7 @@ using WuPilot.Infrastructure.Windows.Profiles;
 
 namespace WuPilot.Infrastructure.Windows.Export;
 
-public sealed record LogCollectionOptions(string Destination, string? InputDirectory = null, int Parallelism = 4, long MaxFileBytes = 64 * 1024 * 1024, int MaxFiles = 300, string? SourceTimeZoneId = null);
+public sealed record LogCollectionOptions(string Destination, string? InputDirectory = null, int Parallelism = 4, long MaxFileBytes = 512 * 1024 * 1024, int MaxFiles = 1000, string? SourceTimeZoneId = null, string? SelectedUpdate = null);
 public sealed record CollectedLog(string Source, string? File, string Status, long Bytes, double Seconds, string? Sha256, string? Detail);
 public sealed record LogCollectionResult(string LocalZip, string? DeliveredZip, string ReportPath, string? DeliveryError, int Collected, int Unavailable);
 
@@ -40,14 +40,19 @@ public sealed class LogCollectionService
         foreach (var root in roots)
         {
             token.ThrowIfCancellationRequested();
-            if (File.Exists(root)) { inputs.Add(root); continue; }
+            if (File.Exists(root))
+            {
+                if (inputs.Count < options.MaxFiles) inputs.Add(root);
+                else manifest.Add(new(root, null, "Limit", 0, 0, null, "File count limit reached; collection is partial."));
+                continue;
+            }
             if (!Directory.Exists(root)) { manifest.Add(new(root, null, "Missing", 0, 0, null, "Not present on this device.")); continue; }
             try
             {
-                var files = Directory.EnumerateFiles(root, "*", new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false, MaxRecursionDepth = 5 });
+                var files = Directory.EnumerateFiles(root, "*", new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false });
                 foreach (var file in files)
                 {
-                    if (!new[] { ".log", ".xml", ".json", ".etl", ".evtx", ".txt" }.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase)) continue;
+                    if (!new[] { ".log", ".xml", ".json", ".etl", ".evtx", ".txt", ".cab", ".dmp", ".bak" }.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase)) continue;
                     if (inputs.Count >= options.MaxFiles) { manifest.Add(new(root, null, "Limit", 0, 0, null, "File count limit reached; collection is partial.")); break; }
                     inputs.Add(file);
                 }
@@ -99,7 +104,7 @@ public sealed class LogCollectionService
                 var timer = Stopwatch.StartNew();
                 try
                 {
-                    var result = await ProcessRunner.RunAsync("wevtutil.exe", ["epl", channel, Path.Combine(raw, name), "/q:*[System[TimeCreated[timediff(@SystemTime) <= 2592000000]]]"], TimeSpan.FromSeconds(45), ct).ConfigureAwait(false);
+                    var result = await ProcessRunner.RunAsync("wevtutil.exe", ["epl", channel, Path.Combine(raw, name)], TimeSpan.FromSeconds(45), ct).ConfigureAwait(false);
                     long bytes = 0;
                     string? hash = null;
                     if (result.ExitCode == 0)
@@ -135,9 +140,9 @@ public sealed class LogCollectionService
         await WriteJson(Path.Combine(work, "manifest.json"), manifest.OrderBy(m => m.Source).ToArray(), token);
         await WriteJson(Path.Combine(work, "analysis.json"), analyses, token);
         await WriteJson(Path.Combine(work, "operation-metrics.json"), metrics, token);
-        var report = await UpgradeReportService.WriteAsync(work, work, analyses, metrics, manifest.ToArray(), options.SourceTimeZoneId, token).ConfigureAwait(false);
-        var csv = new StringBuilder("Operation,Title,StartedAt,DownloadSeconds,InstallSeconds,TotalSeconds,ShutdownToBootSeconds,Confidence,ResultCode,HResult\r\n");
-        foreach (var m in metrics) csv.AppendLine(string.Join(',', new[] { m.Operation, m.Title, m.StartedAt.ToString("O"), StageSeconds(m.DownloadDuration), StageSeconds(m.InstallDuration), Seconds(m.TotalDuration), RebootSeconds(m), m.TimingConfidence.ToString(), m.ResultCode.ToString(), $"0x{m.HResult:X8}" }.Select(Csv)));
+        var report = await UpgradeReportService.WriteAsync(work, work, analyses, metrics, manifest.ToArray(), options.SourceTimeZoneId, token, options.SelectedUpdate).ConfigureAwait(false);
+        var csv = new StringBuilder("Operation,UpdateId,Title,StartedAt,DownloadSeconds,InstallSeconds,TotalSeconds,ShutdownToBootSeconds,Confidence,ResultCode,HResult\r\n");
+        foreach (var m in metrics.Where(m => UpdateTimingFilter.Matches(options.SelectedUpdate, m.UpdateId, m.Title))) csv.AppendLine(string.Join(',', new[] { m.Operation, m.UpdateId, m.Title, m.StartedAt.ToString("O"), StageSeconds(m.DownloadDuration), StageSeconds(m.InstallDuration), Seconds(m.TotalDuration), RebootSeconds(m), m.TimingConfidence.ToString(), m.ResultCode.ToString(), $"0x{m.HResult:X8}" }.Select(Csv)));
         await File.WriteAllTextAsync(Path.Combine(work, "timings.csv"), csv.ToString(), token);
         token.ThrowIfCancellationRequested();
         progress?.Report("Compressing local bundle");
@@ -197,11 +202,26 @@ public sealed class LogCollectionService
         }
     }
 
-    private static string[] DefaultRoots()
+    internal static string[] DefaultRoots(string? windowsDirectory = null)
     {
-        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        var windows = windowsDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         var drive = Path.GetPathRoot(windows)!;
-        return [Path.Combine(windows, "Panther"), Path.Combine(drive, "$WINDOWS.~BT", "Sources", "Panther"), Path.Combine(drive, "$WINDOWS.~BT", "Sources", "Rollback"), Path.Combine(windows, "Logs", "MoSetup"), Path.Combine(windows, "Logs", "SetupDiag"), Path.Combine(windows, "Logs", "CBS", "CBS.log"), Path.Combine(windows, "Logs", "DISM", "dism.log"), Path.Combine(windows, "INF", "setupapi.dev.log"), Path.Combine(windows, "Logs", "WindowsUpdate"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WuPilot", "operation-metrics.json")];
+        var roots = new List<string>();
+        // Probe both locations: retention varies; Windows.old is not a guaranteed move of ~BT.
+        foreach (var parent in new[] { drive, Path.Combine(drive, "Windows.old") })
+        {
+            roots.Add(Path.Combine(parent, "$WINDOWS.~BT", "Sources", "Panther"));
+            roots.Add(Path.Combine(parent, "$WINDOWS.~BT", "Sources", "Rollback"));
+        }
+        foreach (var system in new[] { windows, Path.Combine(drive, "Windows.old", "Windows") })
+        {
+            foreach (var relative in new[] { "Panther", @"Logs\MoSetup", @"Logs\SetupDiag", @"Logs\CBS", @"Logs\DISM", @"Logs\WindowsUpdate", "setupact.log", "setuperr.log", @"INF\setupapi.dev.log", @"INF\setupapi.app.log" })
+                roots.Add(Path.Combine(system, relative));
+        }
+        foreach (var channel in new[] { "System", "Setup", "Microsoft-Windows-WindowsUpdateClient%4Operational" })
+            roots.Add(Path.Combine(drive, "Windows.old", "Windows", "System32", "winevt", "Logs", channel + ".evtx"));
+        roots.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WuPilot", "operation-metrics.json"));
+        return roots.ToArray();
     }
     private static Task WriteJson<T>(string path, T value, CancellationToken token) => File.WriteAllTextAsync(path, JsonSerializer.Serialize(value, JsonOptions), token);
     private static string Seconds(TimeSpan value) => value.TotalSeconds.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);

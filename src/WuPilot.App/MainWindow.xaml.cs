@@ -1732,6 +1732,20 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception exception) { await ShowMessageAsync("Restore stopped", exception.Message); }
     }
 
+    private void PerformanceUpdate_Changed(object sender, TextChangedEventArgs e)
+    {
+        if (PerformanceSummaryText is null) return;
+        ApplyPerformanceFilter();
+    }
+
+    private void ApplyPerformanceFilter()
+    {
+        var selection = PerformanceUpdateBox.Text;
+        var days = SelectedPerformanceDays();
+        Replace(VisibleMetrics, _allMetrics.Where(item => UpdateTimingFilter.Matches(selection, item.Metric.UpdateId, item.Metric.Title) && (!string.IsNullOrWhiteSpace(selection) || days == 0 || item.Metric.CompletedAt >= DateTimeOffset.Now.AddDays(-days))));
+        PerformanceSummaryText.Text = $"{VisibleMetrics.Count} matching operations | {(string.IsNullOrWhiteSpace(selection) ? "Selected date range" : "All retained history")} | Missing timings remain unavailable";
+    }
+
     private async void RefreshPerformance_Click(object sender, RoutedEventArgs e) => await RefreshPerformanceAsync();
     private void PerformanceList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -1786,14 +1800,12 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             DoDetailText.Text = telemetry.Error is null
                 ? $"HTTP/CDN: {FormatBytes(telemetry.BytesFromHttp)}\nConnected Cache: {FormatBytes(telemetry.BytesFromCache)}\nLAN peers: {FormatBytes(telemetry.BytesFromLanPeers)}\nInternet peers: {FormatBytes(telemetry.BytesFromInternetPeers)}\nCache: {FormatBytes(telemetry.CacheBytes)}\nForeground/background limits: {telemetry.ForegroundLimit ?? "default"} / {telemetry.BackgroundLimit ?? "default"}\nSource: {telemetry.Source}"
                 : $"Telemetry unavailable: {telemetry.Error}";
-            var days = PerformanceRangeCombo.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out var parsed) ? parsed : 30;
             _allMetrics.Clear();
             _allMetrics.AddRange((await metricsTask).Select(static metric => new OperationMetricItem(metric)));
-            var visible = days == 0 ? _allMetrics : _allMetrics.Where(item => item.Metric.CompletedAt >= DateTimeOffset.Now.AddDays(-days));
-            Replace(VisibleMetrics, visible);
+            ApplyPerformanceFilter();
             if (selectedMetricId is not null)
                 PerformanceList.SelectedItem = VisibleMetrics.FirstOrDefault(item => item.Metric.Id == selectedMetricId);
-            PerformanceSummaryText.Text = $"{VisibleMetrics.Count} operations · {VisibleMetrics.Count(item => item.Metric.TimingConfidence == EvidenceConfidence.Exact)} measured · {VisibleMetrics.Count(item => item.Metric.TimingConfidence != EvidenceConfidence.Exact)} estimated";
+
         }
         catch (Exception exception) { PerformanceSummaryText.Text = $"Performance data unavailable: {exception.Message}"; }
     }
@@ -1812,7 +1824,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             var destination = LogDestinationBox.Text.Trim();
             if (string.IsNullOrEmpty(destination)) destination = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "WuPilot", "LogBundles");
             var input = string.IsNullOrWhiteSpace(LogInputBox.Text) ? null : LogInputBox.Text.Trim();
-            var result = await new LogCollectionService().CollectAsync(new(destination, input), new Progress<string>(message => LogCollectionStatus.Text = message), cancellation.Token);
+            var result = await new LogCollectionService().CollectAsync(new(destination, input, SelectedUpdate: PerformanceUpdateBox.Text), new Progress<string>(message => LogCollectionStatus.Text = message), cancellation.Token);
             LogCollectionStatus.Text = $"{result.Collected} collected; {result.Unavailable} missing/limited. ZIP: {result.DeliveredZip ?? result.LocalZip}\nReport: {result.ReportPath}\n{result.DeliveryError}";
             Log(LogCollectionStatus.Text);
             OpenLogReportButton.Tag = result.ReportPath;
