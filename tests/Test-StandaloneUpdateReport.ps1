@@ -47,6 +47,10 @@ if (-not (Test-Path -LiteralPath ((Split-Path $failed)+'.zip')) -or -not ($deliv
 $limited=& $generator -Collect -InputPath $inputRoot -Destination $delivery -StagingDirectory $staging -MaxFileMB 1
 $limitedManifest=Get-Content -LiteralPath (Join-Path (Split-Path $limited) 'manifest.json') -Raw | ConvertFrom-Json
 if (-not ($limitedManifest | Where-Object { $_.status -eq 'Limit' -and $_.detail -eq 'File exceeds size limit.' })) { throw 'Size limit missing from manifest.' }
+$limitedHtml=Get-Content -LiteralPath $limited -Raw
+$warningSection=[regex]::Match($limitedHtml,'<details class="warnings"><summary>Collection and analysis warnings \(\d+\)</summary>.*?</details>',[Text.RegularExpressions.RegexOptions]::Singleline)
+if (-not $warningSection.Success -or $limitedHtml.IndexOf('<article>') -gt $warningSection.Index) { throw 'Warnings must be collapsed below update attempts.' }
+if ($limitedHtml.Substring(0,$warningSection.Index).Contains('<p class="notice">Collection')) { throw 'Collection warnings leaked above collapsed section.' }
 $countLimited=& $generator -Collect -InputPath $inputRoot -Destination $delivery -StagingDirectory $staging -MaxFiles 1
 $countManifest=Get-Content -LiteralPath (Join-Path (Split-Path $countLimited) 'manifest.json') -Raw | ConvertFrom-Json
 if (-not ($countManifest | Where-Object { $_.status -eq 'Limit' -and $_.detail -like 'File count limit*' })) { throw 'Count limit missing from manifest.' }

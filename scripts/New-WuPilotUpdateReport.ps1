@@ -364,7 +364,6 @@ function Show-Duration($Value) { if ($null -eq $Value -or "$Value" -eq '') {'Not
 $html = New-Object Text.StringBuilder
 [void]$html.Append('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WuPilot update performance</title><style>body{font:15px/1.6 Segoe UI,Arial;background:#f3f6fa;color:#182b40;margin:0}main{max-width:1100px;margin:auto;padding:32px}article,details{background:white;border:1px solid #dce4ec;border-radius:12px;padding:20px;margin:18px 0}.phases{display:flex;gap:16px;flex-wrap:wrap}.phase{flex:1;min-width:200px;border-top:4px solid #397ab5;padding:12px}strong.duration{display:block;font-size:28px}small{color:#526477}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid #ddd;overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere}.notice{background:#fff3d9;padding:12px}summary{cursor:pointer;font-weight:600}</style></head><body><main><h1>Update performance report</h1>')
 [void]$html.Append('<p>Source time zone: ' + (ConvertTo-ReportHtml $zone.Id) + '. Selection: ' + (ConvertTo-ReportHtml $(if ($Update) {$Update} else {'All retained updates'})) + '</p>')
-foreach ($w in $warnings) { [void]$html.Append('<p class="notice">'+(ConvertTo-ReportHtml $w)+'</p>') }
 if ($updates.Count -eq 0) { [void]$html.Append('<p class="notice">No matching recognizable update attempts. Missing evidence does not imply zero duration.</p>') }
 foreach ($t in $updates) {
     [void]$html.Append('<article><h2>'+(ConvertTo-ReportHtml $t.title)+'</h2><p>'+(Stamp $t.attemptedAt)+' &middot; '+(ConvertTo-ReportHtml $t.status)+'</p><small>'+(ConvertTo-ReportHtml $t.updateId)+'</small><div class="phases">')
@@ -374,6 +373,11 @@ foreach ($t in $updates) {
     [void]$html.Append('</div><p>Waiting for restart: '+(Show-Duration $t.waitingForRestart)+'</p><details><summary>Evidence milestones</summary><table><tr><th>Time</th><th>Event</th><th>Source</th></tr>')
     foreach ($m in $t.milestones) { [void]$html.Append('<tr><td>'+(Stamp $m.time)+'</td><td>'+(ConvertTo-ReportHtml $m.label)+'</td><td>'+(ConvertTo-ReportHtml $m.source)+'</td></tr>') }
     [void]$html.Append('</table></details></article>')
+}
+if ($warnings.Count) {
+    [void]$html.Append('<details class="warnings"><summary>Collection and analysis warnings ('+$warnings.Count+')</summary>')
+    foreach ($w in $warnings) { [void]$html.Append('<p class="notice">'+(ConvertTo-ReportHtml $w)+'</p>') }
+    [void]$html.Append('</details>')
 }
 foreach ($section in @(@{name='Retained operation metrics';items=@($metrics | Where-Object { Matches-Update $_.updateId $_.title })},@{name='Saved supporting log analysis';items=$analysis},@{name='Collection manifest';items=$manifest})) {
     [void]$html.Append('<details><summary>'+(ConvertTo-ReportHtml $section.name)+'</summary><pre>'+(ConvertTo-ReportHtml (ConvertTo-Json -InputObject @($section.items) -Depth 30))+'</pre></details>')
