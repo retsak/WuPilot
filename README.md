@@ -58,6 +58,20 @@ Supply `InputPath` to regenerate reports from an extracted bundle without collec
 
 Validate the standalone script from the repository with `./tests/Test-StandaloneUpdateReport.ps1`. Its checks cover collection, report regeneration, hashes, ZIP contents, filtering, HTML escaping, missing completion evidence, delivery failures, and collection limits.
 
+## Log health and retention audit
+
+Copy [Test-WuPilotLogHealth.ps1](scripts/Test-WuPilotLogHealth.ps1) to a Windows device and run it in an elevated Windows PowerShell 5.1 or PowerShell 7 console to check whether retained event history meets your troubleshooting window:
+
+```powershell
+.\Test-WuPilotLogHealth.ps1 -TargetDays 30 -OutputDirectory 'C:\Support\LogHealth'
+```
+
+The read-only audit checks all registered Windows event channels for enabled state, retention mode, current and maximum size, record count, and oldest/newest timestamps. It highlights System, Setup, and WindowsUpdateClient Operational, flags possible rollover and full retain-mode logs, and inventories the upgrade and servicing files used by the collector, including Windows.old sources. Use `-LogName System,Setup` to restrict event queries.
+
+It writes `log-health.json`, `event-log-health.csv`, `evidence-files.csv`, and `issues.csv`, including available disk capacity and access failures. For circular logs with evidence of lost earlier records and insufficient history, it estimates a larger capacity using the observed history and a configurable `Headroom` multiplier (default 1.5), and supplies a suggested `wevtutil` command for review. No settings are changed automatically.
+
+Sizing estimates depend on historical activity and EVTX allocation. Short history can also result from clearing or recent enablement; file modification dates do not prove evidence coverage. Increasing capacity cannot recover overwritten events. Review disk space and managed policies before applying a suggestion, then rerun after representative update activity. See [audit details and limitations](docs/LOG-COLLECTION.md#log-health-and-retention-audit).
+
 ## Install
 
 WuPilot is Windows-only and supports Windows 10 version 1809 or newer.
