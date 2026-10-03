@@ -10,6 +10,20 @@ Sources include Panther, `$WINDOWS.~BT\Sources\Panther`, rollback, MoSetup, exis
 
 The manifest records missing, denied and limited sources, file-copy time, bytes and hashes for copied files. Files are copied with sharing enabled and bounded to their initial length; live logs are not transactionally consistent. Defaults cap files at 512 MiB each and 1,000 files, skip directory links and retain up to 1,000 findings per file. Text analysis streams the full collected files by default. Event exports are bounded by a 45-second command timeout rather than the source-file size cap. Inspect the manifest before treating any collection as complete.
 
+## Log health and retention audit
+
+Run `scripts/Test-WuPilotLogHealth.ps1` in an elevated Windows PowerShell 5.1 or PowerShell 7 console before collecting evidence:
+
+```powershell
+.\scripts\Test-WuPilotLogHealth.ps1 -TargetDays 30 -OutputDirectory 'C:\Support\LogHealth'
+```
+
+The read-only audit enumerates all registered Windows event channels, reports enabled state, retention mode, current and maximum bytes, record count, and oldest/newest timestamps. It highlights System, Setup, and WindowsUpdateClient Operational, short history, possible circular rollover, full retain-mode logs, and access failures. Use `-LogName System,Setup` to restrict event queries. File inventory still covers the collector's upgrade/servicing locations and Windows.old, including archives; missing optional paths are recorded and can be normal.
+
+Outputs are `log-health.json`, `event-log-health.csv`, `evidence-files.csv`, and `issues.csv`. JSON includes free disk space and limitations. Where circular logs have missing earlier record IDs and insufficient history, it estimates capacity from allocated EVTX bytes divided by the oldest-to-newest span, multiplied by the target and `Headroom` (default 1.5), rounded to 64 KiB. Spans under one hour receive no estimate. Review the suggested `wevtutil` commands, available disk space, and managed policies before manually applying changes; the script never changes settings.
+
+An oldest timestamp reaching the target does not prove all required events exist. Short history may reflect clearing, recent enablement, or sparse activity. Allocation and historical rates make sizing approximate. File sizes and modification times do not establish timestamp coverage, and archives/ETLs are not decoded. Larger capacity preserves future evidence; it cannot restore overwritten events. Rerun after representative update activity and collect a bundle to check actual phase boundaries. Event configuration fields follow Microsoft's [EventLogConfiguration API](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.eventing.reader.eventlogconfiguration).
+
 ## Reports
 
 The HTML report now leads with the latest recognizable OS update attempt and three phase cards: **Download**, **Install → pending reboot**, and **Reboot → update finished**. Waiting between pending reboot and the restart is a separate row. Durations use minutes/seconds, and all displayed event times use the selected source time zone. Other operations, raw log activity, keyword findings and the collection manifest are expandable supporting evidence.
