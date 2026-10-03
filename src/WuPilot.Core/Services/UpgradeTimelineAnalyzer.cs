@@ -10,13 +10,14 @@ public sealed record UpgradePhase(string Name, UpgradeBoundary? Start, UpgradeBo
 }
 public sealed record UpgradeTimeline(string UpdateId, string Title, DateTimeOffset AttemptedAt, UpgradePhase Download,
     UpgradePhase Install, UpgradePhase Reboot, TimeSpan? WaitingForRestart, IReadOnlyList<UpgradeBoundary> Milestones, string Status);
-public sealed record UpgradeSystemEvent(DateTimeOffset Time, string Kind, string? Package, string Source);
+public sealed record UpgradeSystemEvent(DateTimeOffset Time, string Kind, string? Package, string Source,
+    string? UpdateId = null, string? Title = null);
 
 /// <summary>Correlates observed UpdateAgent lifecycle markers with package-specific completion, never kernel boot alone.</summary>
 public static partial class UpgradeTimelineAnalyzer
 {
     public static IReadOnlyList<UpgradeTimeline> Analyze(string source, IEnumerable<string> lines,
-        IReadOnlyList<UpgradeSystemEvent> events, TimeZoneInfo sourceZone, int maxLines = 500_000)
+        IReadOnlyList<UpgradeSystemEvent> events, TimeZoneInfo sourceZone, int maxLines = int.MaxValue)
     {
         var attempts = new List<Attempt>();
         var currentById = new Dictionary<string, Attempt>(StringComparer.OrdinalIgnoreCase);
@@ -69,6 +70,9 @@ public static partial class UpgradeTimelineAnalyzer
 
     private static UpgradeTimeline Build(Attempt a, Attempt[] attempts, IReadOnlyList<UpgradeSystemEvent> events)
     {
+        var identityEvent = events.Where(e => string.Equals(e.UpdateId, a.Id, StringComparison.OrdinalIgnoreCase)
+            && e.Time >= a.AttemptedAt && e.Time < a.AttemptedAt.AddDays(30) && !string.IsNullOrWhiteSpace(e.Title))
+            .OrderBy(e => e.Time).FirstOrDefault();
         var download = new UpgradePhase("Download", a.DownloadStart, a.DownloadEnd, "Log estimate",
             "First download request to DownloadComplete. Includes preparation, retry and transfer time; not network-only throughput.");
         var install = new UpgradePhase("Install → pending reboot", a.InstallStart, a.Pending, "Log boundaries",
@@ -91,24 +95,32 @@ public static partial class UpgradeTimelineAnalyzer
                 {
                     rebootStart = new(firstPowerTransition.Time, firstPowerTransition.Kind == "RestartRequested" ? "Restart initiated" : "Shutdown started (restart request missing)", firstPowerTransition.Source);
                     milestones.Add(rebootStart);
-                    if (boot is not null && a.Package is not null)
+                    if (boot is not null)
                     {
                         var powerOff = candidates.FirstOrDefault(e => e.Kind == "PowerOffRequested" && e.Time > shutdown.Time)?.Time ?? shutdown.Time.AddHours(24);
-                        var success = candidates.FirstOrDefault(e => e.Kind == "PackageInstalled" && string.Equals(e.Package, a.Package, StringComparison.OrdinalIgnoreCase) && e.Time >= boot.Time && e.Time < powerOff && e.Time - rebootStart.Time < TimeSpan.FromHours(24));
+                        // Prefer update-identity success over a constituent package's completion.
+                        var success = candidates.FirstOrDefault(e => e.Kind == "UpdateInstalled"
+                            && string.Equals(e.UpdateId, a.Id, StringComparison.OrdinalIgnoreCase)
+                            && e.Time >= boot.Time && e.Time < powerOff && e.Time - rebootStart.Time < TimeSpan.FromHours(24));
+                        // A known feature-update identity must not finish on a cumulative package event.
+                        if (success is null && identityEvent is null && a.Package is not null)
+                            success = candidates.FirstOrDefault(e => e.Kind == "PackageInstalled" && string.Equals(e.Package, a.Package, StringComparison.OrdinalIgnoreCase) && e.Time >= boot.Time && e.Time < powerOff && e.Time - rebootStart.Time < TimeSpan.FromHours(24));
                         if (success is not null)
                         {
-                            complete = new(success.Time, $"{a.Package} installation finished", success.Source);
+                            complete = new(success.Time, $"{success.Title ?? a.Package ?? "Windows update"} installation finished", success.Source);
                             foreach (var step in candidates.Where(e => e.Time > rebootStart.Time && e.Time < success.Time && e.Kind is "Boot" or "RestartRequested"))
                                 milestones.Add(new(step.Time, step.Kind == "Boot" ? "Windows boot (intermediate milestone)" : "Additional update restart", step.Source));
                             milestones.Add(complete);
-                            rebootNote = "Restart initiation to the matching package's Installed event, including intermediate boots. This confirms package servicing completion, not desktop readiness. Restart association is chronological.";
+                            rebootNote = success.Kind == "UpdateInstalled"
+                                ? "Restart initiation to Windows Update's successful installation event for the same update ID, including intermediate boots. This confirms reported update completion, not desktop readiness. Restart association is chronological."
+                                : "Restart initiation to the matching package's Installed event, including intermediate boots. This confirms package servicing completion, not desktop readiness. Restart association is chronological.";
                         }
                     }
                 }
             }
         }
         var reboot = new UpgradePhase("Reboot → update finished", rebootStart, complete, "Correlated estimate", rebootNote);
-        return new(a.Id, a.Package is null ? "Windows OS update" : $"Windows cumulative update · {a.Package}", a.DownloadStart?.Time ?? a.InstallStart!.Time,
+        return new(a.Id, identityEvent?.Title ?? (a.Package is null ? "Windows OS update" : $"Windows cumulative update · {a.Package}"), a.DownloadStart?.Time ?? a.InstallStart!.Time,
             download, install, reboot, rebootStart is not null && a.Pending is not null ? rebootStart.Time - a.Pending.Time : null,
             milestones.OrderBy(m => m.Time).ToArray(), complete is not null ? "Update completed" : a.Pending is not null ? "Restart required; completion unconfirmed" : "Partial evidence");
     }

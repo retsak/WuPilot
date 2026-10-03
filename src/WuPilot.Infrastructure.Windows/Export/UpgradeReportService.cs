@@ -17,12 +17,26 @@ public static class UpgradeReportService
         var analyses = await ReadAsync<UpgradeLogAnalysis[]>(Path.Combine(bundle, "analysis.json"), token) ?? [];
         var metrics = await ReadAsync<OperationMetric[]>(Path.Combine(bundle, "operation-metrics.json"), token) ?? [];
         var manifest = await ReadAsync<CollectedLog[]>(Path.Combine(bundle, "manifest.json"), token) ?? [];
+        // Rebuild supporting evidence from snapshots, including tails omitted by older analyzers.
+        var refreshed = analyses.ToList();
+        foreach (var file in manifest.Where(m => m.Status == "Collected" && m.File is not null && Path.GetExtension(m.File).Equals(".log", StringComparison.OrdinalIgnoreCase)))
+        {
+            token.ThrowIfCancellationRequested();
+            var path = ResolveSource(bundle, file.File!);
+            if (!File.Exists(path)) continue; // Preserve saved evidence when raw snapshots are unavailable.
+            var analysis = UpgradeLogAnalyzer.Analyze(file.Source, ReadLines(path, token));
+            refreshed.RemoveAll(a => a.Activity.Any(item => item.Source == file.Source) || a.Findings.Any(item => item.Source == file.Source)
+                || (a.Truncated && a.Activity.Count == 0 && a.Findings.Count == 0));
+            refreshed.Add(analysis);
+        }
+        analyses = refreshed.ToArray();
         if (timeZoneId is null && File.Exists(Path.Combine(bundle, "phase-summary.json")))
         {
             using var context = await ReadAsync<JsonDocument>(Path.Combine(bundle, "phase-summary.json"), token);
             if (context?.RootElement.TryGetProperty("timeZone", out var savedZone) == true) timeZoneId = savedZone.GetString();
         }
         Directory.CreateDirectory(destination);
+        await File.WriteAllTextAsync(Path.Combine(destination, "analysis.json"), JsonSerializer.Serialize(analyses, JsonOptions), token).ConfigureAwait(false);
         return await WriteAsync(bundle, destination, analyses, metrics, manifest, timeZoneId, token, selectedUpdate).ConfigureAwait(false);
     }, token);
 

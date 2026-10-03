@@ -13,7 +13,7 @@ public sealed record UpgradeLogAnalysis(IReadOnlyList<LogActivity> Activity, IRe
 /// <summary>Observed log windows are evidence coverage, never inferred operation durations.</summary>
 public static partial class UpgradeLogAnalyzer
 {
-    public static UpgradeLogAnalysis Analyze(string source, IEnumerable<string> lines, int maxLines = 500_000)
+    public static UpgradeLogAnalysis Analyze(string source, IEnumerable<string> lines, int maxLines = int.MaxValue)
     {
         var activity = new List<LogActivity>();
         var findings = new List<LogFinding>();

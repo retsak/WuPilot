@@ -11,7 +11,7 @@ internal static class UpgradeEventReader
     {
         var result = new List<UpgradeSystemEvent>();
         using var reader = new EventLogReader(new EventLogQuery(path, PathType.FilePath,
-            "*[System[(EventID=1074 or EventID=12 or EventID=13 or EventID=2)]]"));
+            "*[System[(EventID=1074 or EventID=12 or EventID=13 or EventID=2 or EventID=19 or EventID=41)]]"));
         for (var count = 0; count < 100_000; count++)
         {
             token.ThrowIfCancellationRequested();
@@ -34,6 +34,10 @@ internal static class UpgradeEventReader
         var id = SystemValue("EventID");
         var reference = $"{source} · record {SystemValue("EventRecordID")}";
         string? Data(string name) => document.Descendants().FirstOrDefault(e => e.Name.LocalName == name || (e.Name.LocalName == "Data" && e.Attribute("Name")?.Value == name))?.Value;
+        if (provider == "Microsoft-Windows-WindowsUpdateClient" && id is "19" or "41"
+            && Guid.TryParse(Data("updateGuid"), out var updateId))
+            return new(time, id == "19" ? "UpdateInstalled" : "UpdateInstallStarted", null, reference,
+                updateId.ToString("D"), Data("updateTitle"));
         if (provider == "Microsoft-Windows-Kernel-General" && id is "12" or "13")
             return new(time, id == "12" ? "Boot" : "Shutdown", null, reference);
         if (provider == "User32" && id == "1074")

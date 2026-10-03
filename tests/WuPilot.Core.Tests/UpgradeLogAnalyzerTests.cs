@@ -30,6 +30,20 @@ public sealed class UpgradeLogAnalyzerTests
     }
 
     [Fact]
+    public void ScansLatePhasesAndFindingsBeyondHalfAMillionLines()
+    {
+        var lines = new[] { "2026-09-01 12:00:00 Info Phase: Downlevel" }
+            .Concat(Enumerable.Repeat("2026-09-01 12:01:00 Info working", 500_000))
+            .Concat(new[] { "2026-09-01 12:04:00 Info Phase: SafeOS", "2026-09-01 12:05:00 Error failed 0xC1900101" });
+        var result = UpgradeLogAnalyzer.Analyze("setupact.log", lines);
+        Assert.False(result.Truncated);
+        Assert.Equal(500_003, result.LinesRead);
+        Assert.Equal("SAFEOS", result.Activity[1].Phase);
+        Assert.Equal(TimeSpan.FromMinutes(1), result.Activity[1].ObservedSpan);
+        Assert.Equal(500_003, Assert.Single(result.Findings).Line);
+    }
+
+    [Fact]
     public void ReportsParsingLimit()
     {
         var result = UpgradeLogAnalyzer.Analyze("setup.log", ["one", "two", "three"], 2);

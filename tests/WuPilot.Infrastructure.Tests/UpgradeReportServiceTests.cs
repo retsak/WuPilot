@@ -5,6 +5,26 @@ namespace WuPilot.Infrastructure.Tests;
 
 public sealed class UpgradeReportServiceTests
 {
+    [Fact]
+    public async Task RegenerationRefreshesPreviouslyTruncatedSupportingEvidence()
+    {
+        var bundle = Path.Combine(Path.GetTempPath(), "WuPilot-report-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(bundle, "logs"));
+            await File.WriteAllTextAsync(Path.Combine(bundle, "analysis.json"), "[{\"activity\":[],\"findings\":[],\"linesRead\":500000,\"truncated\":true}]");
+            await File.WriteAllTextAsync(Path.Combine(bundle, "operation-metrics.json"), "[]");
+            await File.WriteAllTextAsync(Path.Combine(bundle, "manifest.json"), "[{\"source\":\"setupact.log\",\"file\":\"logs/setupact.log\",\"status\":\"Collected\"}]");
+            await File.WriteAllTextAsync(Path.Combine(bundle, "logs", "setupact.log"), "2026-09-01 12:00:00 Info Phase: SafeOS\n2026-09-01 12:01:00 Error failed");
+            var report = await UpgradeReportService.RegenerateAsync(bundle, Path.Combine(bundle, "refreshed"), "UTC", default);
+            Assert.Contains("Error failed", await File.ReadAllTextAsync(report));
+        }
+        finally
+        {
+            if (Directory.Exists(bundle)) Directory.Delete(bundle, recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData("UpdateAgent.log", true)]
     [InlineData("0021-UpdateAgent.Old.log", true)]
@@ -15,6 +35,26 @@ public sealed class UpgradeReportServiceTests
     [InlineData("UpdateAgent.dll", false)]
     public void RecognizesOnlyCurrentAndRotatedTextLogs(string name, bool expected) =>
         Assert.Equal(expected, UpgradeReportService.IsUpdateAgentLog(name));
+
+    [Theory]
+    [InlineData("19", "Microsoft-Windows-WindowsUpdateClient", "UpdateInstalled")]
+    [InlineData("41", "Microsoft-Windows-WindowsUpdateClient", "UpdateInstallStarted")]
+    [InlineData("20", "Microsoft-Windows-WindowsUpdateClient", null)]
+    [InlineData("19", "UnrelatedProvider", null)]
+    public void ReadsUpdateIdentityAndTitleWithoutTreatingFailureAsSuccess(string id, string provider, string? kind)
+    {
+        const string guid = "{ba6eafb7-6fd3-4fb9-8462-3d86b81835b3}";
+        var xml = $"""
+            <Event><System><Provider Name='{provider}'/><EventID>{id}</EventID><TimeCreated SystemTime='2026-10-03T00:35:39.5753174Z'/><EventRecordID>10362</EventRecordID></System><EventData><Data Name='updateTitle'>Windows 11, version 26H2</Data><Data Name='updateGuid'>{guid}</Data></EventData></Event>
+            """;
+        var parsed = UpgradeEventReader.Parse(xml, "System.evtx");
+        Assert.Equal(kind, parsed?.Kind);
+        if (parsed is not null)
+        {
+            Assert.Equal("ba6eafb7-6fd3-4fb9-8462-3d86b81835b3", parsed.UpdateId);
+            Assert.Equal("Windows 11, version 26H2", parsed.Title);
+        }
+    }
 
     [Theory]
     [InlineData("5112", "0x0", "PackageInstalled")]
