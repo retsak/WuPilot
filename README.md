@@ -6,7 +6,7 @@ The application uses the supported Windows Update Agent (WUA) COM API. Microsoft
 
 ## Current capabilities
 
-New for the next release: **Performance → Upgrade logs and reports** collects and ZIPs logs to a local folder or network share, analyzes existing logs, and generates HTML/JSON/CSV timing reports without requiring a scan. A standalone collector binary and portable desktop ZIP are included in the release workflow. See [log collection and standalone usage](docs/LOG-COLLECTION.md).
+New for the next release: **Performance → Upgrade logs and reports** collects and ZIPs logs to a local folder or network share, analyzes existing logs, and generates HTML/JSON/CSV timing reports without requiring a scan. A standalone collector binary and portable desktop ZIP are included in the release workflow. The single-file [PowerShell collector and report generator](scripts/New-WuPilotUpdateReport.ps1) also runs without WuPilot or the .NET SDK. See [log collection and standalone usage](docs/LOG-COLLECTION.md).
 
 - Scan one or several sources in sequence:
   - policy default
@@ -36,6 +36,27 @@ New for the next release: **Performance → Upgrade logs and reports** collects 
 - Diagnose update services, registered WUA sources, Windows Update/MDM policy registry values, WinHTTP proxy, Microsoft content DNS, WUA version/history, BITS jobs, disk space, Entra join identity, and pending restart state.
 - Start required services, run DISM health operations, generate `WindowsUpdate.log`, or reset update caches. Cache reset renames existing stores to timestamped recovery paths rather than deleting them.
 - Export one or several selected update records, technician notes, JSON, CSV, and a human-readable HTML review bundle plus Windows Update events, CBS errors, SetupAPI driver-install evidence, BITS state, and existing SetupDiag results.
+
+## Standalone PowerShell collection and reports
+
+Copy [New-WuPilotUpdateReport.ps1](scripts/New-WuPilotUpdateReport.ps1) to a Windows device and run it with Windows PowerShell 5.1 or PowerShell 7. It requires neither WuPilot nor the .NET SDK. For live collection, open an elevated PowerShell console:
+
+```powershell
+.\New-WuPilotUpdateReport.ps1 -Destination 'C:\Support\Reports' -OpenReport
+```
+
+The script collects Windows upgrade and servicing logs, exports System, Setup, and WindowsUpdateClient events, and generates `report.html`, `phase-summary.json`, and `update-timings.csv`. It stages a unique evidence folder and ZIP under `%LocalAppData%\WuPilot\LogBundles`, then delivers a checksum-verified ZIP to the destination. Local evidence remains available if delivery fails. The manifest records missing, denied, and limited sources. Collection does not install updates or restart the device.
+
+Supply `InputPath` to regenerate reports from an extracted bundle without collecting live data. Add `Collect` to copy and package existing logs from another device:
+
+```powershell
+.\New-WuPilotUpdateReport.ps1 -InputPath 'C:\Support\Bundle' -Destination 'C:\Support\Report' -Update KB5124010 -TimeZoneId 'Central Standard Time'
+.\New-WuPilotUpdateReport.ps1 -Collect -InputPath 'C:\Support\ReceivedLogs' -Destination '\\server\support\WuPilot'
+```
+
+`Update` accepts a KB number or full update GUID; omit it to report all recognized attempts. Missing timing boundaries remain unavailable. Collection defaults to 1,000 files and 512 MiB per source file; adjust these with `MaxFiles` and `MaxFileMB`, or change the local staging location with `StagingDirectory`. See [collection details and limitations](docs/LOG-COLLECTION.md#standalone-powershell-report-generator).
+
+Validate the standalone script from the repository with `./tests/Test-StandaloneUpdateReport.ps1`. Its checks cover collection, report regeneration, hashes, ZIP contents, filtering, HTML escaping, missing completion evidence, delivery failures, and collection limits.
 
 ## Install
 

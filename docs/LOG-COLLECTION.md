@@ -36,6 +36,39 @@ WuPilot's monotonic timings measure its WUA calls, including revalidation in the
 
 ## Standalone collector
 
+### Standalone PowerShell report generator
+
+Use [`scripts/New-WuPilotUpdateReport.ps1`](../scripts/New-WuPilotUpdateReport.ps1) to collect evidence and generate reports without WuPilot, the collector executable, or the .NET SDK. Copy the single script to another Windows machine and run it with Windows PowerShell 5.1 or PowerShell 7. For live collection, open an elevated PowerShell console and omit `InputPath`:
+
+```powershell
+.\New-WuPilotUpdateReport.ps1 -Destination 'C:\Support\Reports' -OpenReport
+.\New-WuPilotUpdateReport.ps1 -Destination '\\server\support\WuPilot' -Update KB5124010 -MaxFiles 3000 -MaxFileMB 1024
+```
+
+Live collection probes Panther, rollback, MoSetup (including UpdateAgent), CBS, DISM, SetupAPI, Windows Update logs, existing SetupDiag output, and retained Windows.old locations. It exports full retained System, Setup, and WindowsUpdateClient Operational event history with a 45-second timeout per channel. WuPilot operation metrics are included when present; WuPilot does not need to be installed. ETLs, CABs and dumps are retained without decoding, and SetupDiag is not executed or downloaded.
+
+Each collection creates a unique folder and ZIP under `%LocalAppData%\WuPilot\LogBundles`. Override that location with `StagingDirectory`. The script copies files with read/write/delete sharing, bounds each copy to its initial length, skips file/directory links, and records source paths, outcomes, bytes, copy time and SHA-256 hashes in `manifest.json`. Defaults are 1,000 files and 512 MiB per source file; live event exports are separate from these limits. Supporting text analysis scans collected `.log` files, records observed activity windows and retains up to 1,000 review findings per file. Those windows are evidence coverage, not update durations.
+
+The script writes the reports into the staged bundle, creates the local ZIP, then copies it to `Destination` using a `.partial` file. It verifies the copied ZIP's SHA-256 before renaming it. Delivery failures issue a warning and retain the complete local ZIP; destination `.partial` files are incomplete. Ctrl+C stops work at a PowerShell boundary; partial staging files may remain. Network I/O can wait for the operating system's timeout. Review manifest warnings for missing, denied or limited sources before treating collection as complete.
+
+To package logs from another device without collecting this device's events, use `Collect` with `InputPath`:
+
+```powershell
+.\New-WuPilotUpdateReport.ps1 -Collect -InputPath 'C:\Support\ReceivedLogs' -Destination 'C:\Support\Bundles' -TimeZoneId 'Central Standard Time'
+```
+
+For report-only regeneration, supply `InputPath` without `Collect`:
+
+```powershell
+.\New-WuPilotUpdateReport.ps1 -InputPath 'C:\Support\Bundle' -Destination 'C:\Support\Report' -TimeZoneId 'Central Standard Time' -Update KB5124010 -OpenReport
+```
+
+`InputPath` accepts an extracted bundle or a directory containing UpdateAgent logs and exported EVTX files. In report-only mode, `Destination` must be a different directory. The script writes `report.html`, `phase-summary.json`, and `update-timings.csv`. Omit `Update` to include all recognized attempts; supply a KB, bare KB number, or full update GUID to filter. `OpenReport` opens the completed HTML in the default browser.
+
+Raw UpdateAgent and EVTX snapshots are reanalyzed, including rotated UpdateAgent logs. The HTML includes supporting analysis, filtered operation metrics, and the collection manifest. Report-only mode displays supporting analysis as saved; collection rebuilds it from available `.log` snapshots. If no raw UpdateAgent files are listed or found, a saved phase summary can supply timings, with an explicit warning. Missing snapshots and unreadable event files produce warnings; missing boundaries remain unavailable. The script reuses the saved source time zone unless overridden, otherwise uses the local zone. Offline analysis normally needs no elevation.
+
+Run `tests/Test-StandaloneUpdateReport.ps1` for synthetic collection/report regression checks on either supported PowerShell version.
+
 The next release workflow publishes self-contained, single-file x64 and ARM64 collectors, full portable desktop ZIPs, and SHA-256 sidecars. The collector requires neither the SDK nor a WuPilot installation. Use an elevated console for protected live logs; offline analysis usually needs no elevation.
 
 ```powershell
