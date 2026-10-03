@@ -71,6 +71,7 @@ public sealed record StagedPolicyChange(
     PolicyOwnership Ownership,
     PolicyRisk Risk,
     bool RequiresRestart,
-    string Status);
+    string Status,
+    string? InitialEffectiveValue = null);
 
 public enum ShellProgressState { None, Indeterminate, Normal, Paused, Error }

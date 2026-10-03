@@ -205,6 +205,29 @@ public sealed class WatchedUpdateItem(WatchedUpdate update)
     public string CheckedLabel => $"Last checked {Update.LastCheckedAt:g}";
 }
 
+public sealed class QuickControlItem(PolicyDefinition definition) : INotifyPropertyChanged
+{
+    public string Id => definition.Id;
+    public string DisplayName => definition.DisplayName;
+    public string Description => definition.Description;
+    public bool IsOn { get; private set; }
+    public bool CanEdit { get; private set; }
+    public string StateLabel { get; private set; } = "Refresh to read current state.";
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public void Update(PolicyState? state, StagedPolicyChange? pending, bool busy)
+    {
+        IsOn = (pending is null ? state?.RequestedValue ?? state?.EffectiveValue : pending.AfterValue) == "1";
+        CanEdit = state?.CanEdit == true && !busy;
+        static string Label(string? value) => value switch { "1" => "On", "0" => "Off", _ => "Windows default" };
+        StateLabel = state is null ? "Refresh to read current state." :
+            $"Effective: {Label(state.EffectiveValue)} · {state.Ownership}\n" +
+            (pending is null ? $"Requested: {Label(state.RequestedValue)}" : $"Pending: {Label(pending.AfterValue)} · not applied") +
+            (!state.CanEdit ? $"\n{state.Status}" : string.Empty);
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+    }
+}
+
 public sealed class PolicyStateItem(PolicyState state, bool isFavorite = false)
 {
     public PolicyState State { get; } = state;
@@ -284,7 +307,14 @@ public sealed class StagedPolicyChangeItem(StagedPolicyChange change)
 {
     public StagedPolicyChange Change { get; } = change;
     public string Title => Change.DisplayName;
-    public string Summary => $"{Change.BeforeValue ?? "Windows default"} → {(Change.Remove ? "Windows default" : Change.AfterValue)} · {Change.Risk}" +
+    private string Label(string? value)
+    {
+        if (value is null) return "Windows default";
+        var definition = PolicyCatalog.All.FirstOrDefault(item => item.Id == Change.PolicyId);
+        return definition?.ValueKind == PolicyValueKind.Boolean ? value == "1" ? "On" : "Off" :
+            definition?.Choices?.GetValueOrDefault(value) ?? value;
+    }
+    public string Summary => $"{Label(Change.BeforeValue)} → {Label(Change.Remove ? null : Change.AfterValue)} · {Change.Risk}" +
         (Change.RequiresRestart ? " · restart required" : string.Empty);
     public string Warning => Change.Status;
 }

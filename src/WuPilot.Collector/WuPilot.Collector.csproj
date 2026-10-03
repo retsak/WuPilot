@@ -4,7 +4,7 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <AssemblyName>WuPilot-Collector</AssemblyName>
-    <Version>0.4.3</Version>
+    <Version>0.4.5</Version>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../WuPilot.Infrastructure.Windows/WuPilot.Infrastructure.Windows.csproj" /></ItemGroup>
 </Project>

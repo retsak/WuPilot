@@ -7,7 +7,11 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
-            <SolidColorBrush x:Key="WuPilotAccentBrush" Color="#0F6CBD" />
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light"><SolidColorBrush x:Key="WuPilotAccentBrush" Color="#0F6CBD" /></ResourceDictionary>
+                <ResourceDictionary x:Key="Dark"><SolidColorBrush x:Key="WuPilotAccentBrush" Color="#60CDFF" /></ResourceDictionary>
+                <ResourceDictionary x:Key="Default"><SolidColorBrush x:Key="WuPilotAccentBrush" Color="#0F6CBD" /></ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
             <SolidColorBrush x:Key="WuPilotSuccessBrush" Color="#107C10" />
             <SolidColorBrush x:Key="WuPilotWarningBrush" Color="#8A4B00" />
             <Style x:Key="SectionCardStyle" TargetType="Border">

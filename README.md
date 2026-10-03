@@ -130,9 +130,13 @@ The **Registered sources** tab is a read-only inventory of WUA services already 
 
 For a control-by-control description of scanning, comparison, watchlists, diagnostics, history, exports, and single-update actions, see the [feature guide](docs/FEATURES.md).
 
-### Update controls and policy workbench
+### Command center and policy workbench
 
-Open **Update controls** to refresh current Windows Update and Delivery Optimization policy. Quick controls cover Microsoft product updates, continuous innovation, metered downloads, restart notifications, and pause/resume. The workbench exposes requested and effective values, ownership, Windows-build support, documented choices, and local editability.
+The redesigned **Command center** puts everyday switches and a single pending-changes area first. Each switch shows effective, requested, and pending state. Flip back to cancel a pending change, or use **Discard all**; **Review and apply** confirms the batch before writing. Expand **Advanced policies and change history** for the complete policy editor and audit. **More** contains Windows Settings and audit export.
+
+The sidebar now has six workspaces. Comparison, watchlist, and registered sources are secondary tabs within **Scan and review**; update history and session activity are grouped under **Records**. Existing saved page selections and completion notices continue to reach these tools.
+
+Open **Command center** to refresh current Windows Update and Delivery Optimization policy. Quick controls cover Microsoft product updates, continuous innovation, metered downloads, restart notifications, and pause/resume. The workbench exposes requested and effective values, ownership, Windows-build support, documented choices, and local editability.
 
 Every change requires confirmation. WuPilot snapshots the original registry value, applies and verifies the entire batch, and rolls back partial changes on failure. The durable audit can be exported or used to restore a prior value. MDM-only CSP settings are evidence-only; domain or MDM management can overwrite a permitted local request. Private Windows Settings mappings are explicitly identified and build-gated.
 
@@ -156,7 +160,7 @@ WuPilot checks `retsak/WuPilot` stable releases whenever the application launche
 
 WuPilot saves a versioned per-user workflow preference file under `%LocalAppData%\WuPilot`. It restores visible window placement, navigation page, theme, scan setup, result sort/filter, performance range, policy filters, favorites, and the taskbar-attention preference. Window coordinates are clamped to a visible monitor. Scan results, selected updates, technician notes, and staged policy changes are deliberately never restored.
 
-Use **Ctrl+1**, **Ctrl+2**, and **Ctrl+3** for Scan, Update controls, and Performance. **Ctrl+F** focuses the active page search, **F5** refreshes the active read-only page, **Ctrl+Enter** starts a scan, **Esc** requests supported cancellation, and **Ctrl+Shift+E** exports available evidence. Shortcuts never bypass a policy or update confirmation.
+Use **Ctrl+1**, **Ctrl+2**, and **Ctrl+3** for Scan, Command center, and Performance. **Ctrl+F** reveals and focuses the active page search, including the advanced policy search. **F5** refreshes the active read-only page, **Ctrl+Enter** starts a scan, **Esc** requests supported cancellation, and **Ctrl+Shift+E** exports available evidence. Shortcuts never bypass a policy or update confirmation.
 
 ![Performance page restored after relaunch](docs/images/windows-validation-2026-07-25/qol-restored-session.png)
 

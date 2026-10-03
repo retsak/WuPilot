@@ -2,6 +2,7 @@
     x:Class="WuPilot.App.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:WuPilot.App"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
@@ -50,32 +51,32 @@
                         Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" SelectionChanged="Navigation_SelectionChanged">
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Name="ScanNav" Content="Scan and review" Tag="scan" Icon="Find" IsSelected="True" />
-                <NavigationViewItem x:Name="CompareNav" Content="Compare scans" Tag="compare">
-                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE8AB;" /></NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem x:Name="ControlsNav" Content="Update controls" Tag="controls">
+                <NavigationViewItem x:Name="ControlsNav" Content="Command center" Tag="controls">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem x:Name="PerformanceNav" Content="Performance" Tag="performance">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE9D2;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Watchlist" Tag="watchlist">
-                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE734;" /></NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="Registered sources" Tag="sources">
-                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE774;" /></NavigationViewItem.Icon>
-                </NavigationViewItem>
                 <NavigationViewItem Content="Diagnostics" Tag="diagnostics">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE9D9;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Update history" Tag="history" Icon="Clock" />
-                <NavigationViewItem Content="Activity" Tag="activity">
-                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE9D5;" /></NavigationViewItem.Icon>
-                </NavigationViewItem>
+                <NavigationViewItem Content="Records" Tag="history" Icon="Clock" />
                 <NavigationViewItem Content="About" Tag="about" Icon="Help" />
             </NavigationView.MenuItems>
 
-            <ScrollViewer x:Name="PageScrollViewer"
+            <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                <StackPanel x:Name="ScanToolsBar" Orientation="Horizontal" Spacing="8" Margin="24,12,24,0">
+                    <ToggleButton Content="Scan and review" Tag="scan" Click="WorkspaceTab_Click" IsChecked="True" />
+                    <ToggleButton Content="Compare scans" Tag="compare" Click="WorkspaceTab_Click" />
+                    <ToggleButton Content="Watchlist" Tag="watchlist" Click="WorkspaceTab_Click" />
+                    <ToggleButton Content="Registered sources" Tag="sources" Click="WorkspaceTab_Click" />
+                </StackPanel>
+                <StackPanel x:Name="RecordsToolsBar" Orientation="Horizontal" Spacing="8" Margin="24,12,24,0" Visibility="Collapsed">
+                    <ToggleButton Content="Update history" Tag="history" Click="WorkspaceTab_Click" />
+                    <ToggleButton Content="Session activity" Tag="activity" Click="WorkspaceTab_Click" />
+                </StackPanel>
+            <ScrollViewer x:Name="PageScrollViewer" Grid.Row="1"
                           VerticalScrollMode="Auto" VerticalScrollBarVisibility="Auto"
                           HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled"
                           ZoomMode="Disabled">
@@ -100,8 +101,7 @@
                     </Grid>
 
                     <Border Grid.Row="1" Style="{StaticResource SectionCardStyle}" Margin="0,0,0,16">
-                        <Grid ColumnSpacing="20">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="1.2*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <local:AdaptiveCardPanel MinimumItemWidth="380">
                             <StackPanel>
                                 <TextBlock Text="Update sources" FontWeight="SemiBold" Margin="0,0,0,8" />
                                 <ItemsControl ItemsSource="{x:Bind ProviderOptions}">
@@ -118,10 +118,10 @@
                                     <Button Content="All" Tag="All" Click="ProviderShortcut_Click" />
                                     <Button Content="Clear" Tag="Clear" Click="ProviderShortcut_Click" />
                                 </StackPanel>
-                                <TextBox x:Name="CustomServiceIdBox" Header="Custom service ID (optional)" PlaceholderText="WUA service GUID" Width="360" HorizontalAlignment="Left" Margin="0,8,0,0" />
-                                <TextBox x:Name="OfflineCabPathBox" Header="Offline catalog (optional)" PlaceholderText="C:\support\Wsusscn2.cab — security metadata only; no drivers" Width="520" HorizontalAlignment="Left" Margin="0,8,0,0" />
+                                <TextBox x:Name="CustomServiceIdBox" Header="Custom service ID (optional)" PlaceholderText="WUA service GUID" HorizontalAlignment="Stretch" Margin="0,8,0,0" />
+                                <TextBox x:Name="OfflineCabPathBox" Header="Offline catalog (optional)" PlaceholderText="C:\support\Wsusscn2.cab — security metadata only; no drivers" HorizontalAlignment="Stretch" Margin="0,8,0,0" />
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="8">
+                            <StackPanel Spacing="8">
                                 <TextBlock Text="Saved scan profiles" FontWeight="SemiBold" />
                                 <ComboBox x:Name="SavedProfileCombo" ItemsSource="{x:Bind SavedProfiles}" DisplayMemberPath="Name" PlaceholderText="Choose a saved profile" HorizontalAlignment="Stretch" />
                                 <StackPanel Orientation="Horizontal" Spacing="6">
@@ -133,12 +133,12 @@
                                 <ComboBox x:Name="PresetCombo" ItemsSource="{x:Bind PresetOptions}" DisplayMemberPath="DisplayName" SelectedIndex="2" SelectionChanged="PresetCombo_SelectionChanged" HorizontalAlignment="Stretch" />
                                 <TextBox x:Name="CustomCriteriaBox" Header="Custom WUA criteria" PlaceholderText="IsInstalled=0 and Type='Driver'" Visibility="Collapsed" />
                                 <CheckBox x:Name="SupersededCheck" Content="Include potentially superseded updates" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="2" VerticalAlignment="Bottom" Spacing="8">
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
                                 <Button x:Name="ScanButton" Content="Start scan" Style="{StaticResource AccentButtonStyle}" Click="Scan_Click" MinWidth="120" />
                                 <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" IsEnabled="False" MinWidth="120" />
                             </StackPanel>
-                        </Grid>
+                            </StackPanel>
+                        </local:AdaptiveCardPanel>
                     </Border>
 
                     <Border x:Name="ScanInsightCard" Grid.Row="2" Style="{StaticResource SectionCardStyle}" Margin="0,0,0,16" Visibility="Collapsed">
@@ -163,8 +163,7 @@
                         </Grid>
                     </Border>
 
-                    <Grid Grid.Row="3" ColumnSpacing="16">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="3*" MinWidth="460" /><ColumnDefinition Width="2*" MinWidth="330" /></Grid.ColumnDefinitions>
+                    <local:AdaptiveCardPanel Grid.Row="3" MinimumItemWidth="520">
                         <Border Style="{StaticResource SectionCardStyle}" Padding="0">
                             <Grid>
                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
@@ -182,11 +181,11 @@
                                         <Button Content="Clear selection" Click="ClearSelection_Click" Padding="10,4" />
                                         <Button Content="Reset filters" Click="ClearResultFilters_Click" Padding="10,4" />
                                     </StackPanel>
-                                    <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="8">
-                                        <TextBox x:Name="FilterBox" Width="240" PlaceholderText="Title, source, KB, or CVE" TextChanged="FilterBox_TextChanged" />
-                                        <ComboBox x:Name="ResultFilterCombo" Width="150" ItemsSource="{x:Bind ResultFilterOptions}" DisplayMemberPath="DisplayName" SelectedIndex="0" SelectionChanged="ResultFilter_SelectionChanged" />
-                                        <ComboBox x:Name="ResultSortCombo" Width="190" ItemsSource="{x:Bind ResultSortOptions}" DisplayMemberPath="DisplayName" SelectedIndex="0" SelectionChanged="ResultSort_SelectionChanged" />
-                                    </StackPanel>
+                                    <local:AdaptiveCardPanel Grid.Row="1" Grid.ColumnSpan="2" MinimumItemWidth="200">
+                                        <TextBox x:Name="FilterBox" HorizontalAlignment="Stretch" PlaceholderText="Title, source, KB, or CVE" TextChanged="FilterBox_TextChanged" />
+                                        <ComboBox x:Name="ResultFilterCombo" HorizontalAlignment="Stretch" ItemsSource="{x:Bind ResultFilterOptions}" DisplayMemberPath="DisplayName" SelectedIndex="0" SelectionChanged="ResultFilter_SelectionChanged" />
+                                        <ComboBox x:Name="ResultSortCombo" HorizontalAlignment="Stretch" ItemsSource="{x:Bind ResultSortOptions}" DisplayMemberPath="DisplayName" SelectedIndex="0" SelectionChanged="ResultSort_SelectionChanged" />
+                                    </local:AdaptiveCardPanel>
                                     <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="8">
                                         <Button x:Name="InstallAllButton" Content="Install all" Click="InstallAll_Click" Style="{StaticResource AccentButtonStyle}" IsEnabled="False" ToolTipService.ToolTip="Installs all eligible updates sequentially, including updates that may display a prompt." />
                                         <Button x:Name="InstallSelectedButton" Content="Install selected" Click="InstallSelected_Click" IsEnabled="False" ToolTipService.ToolTip="Select one or more missing updates to enable this action." />
@@ -194,7 +193,7 @@
                                         <TextBlock x:Name="SelectedResultCountText" Text="0 selected" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                     </StackPanel>
                                 </Grid>
-                                <ListView x:Name="UpdatesList" Grid.Row="2" ItemsSource="{x:Bind VisibleUpdates}" SelectionChanged="UpdatesList_SelectionChanged" SelectionMode="Multiple"
+                                <ListView x:Name="UpdatesList" MaxHeight="600" Grid.Row="2" ItemsSource="{x:Bind VisibleUpdates}" SelectionChanged="UpdatesList_SelectionChanged" SelectionMode="Multiple"
                                           ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollMode="Enabled">
                                     <ListView.ItemTemplate>
                                         <DataTemplate>
@@ -218,7 +217,7 @@
                             </Grid>
                         </Border>
 
-                        <Border Grid.Column="1" Style="{StaticResource SectionCardStyle}">
+                        <Border Style="{StaticResource SectionCardStyle}">
                             <ScrollViewer>
                                 <StackPanel Spacing="12">
                                     <TextBlock Text="Update details" FontWeight="SemiBold" FontSize="16" />
@@ -256,7 +255,7 @@
                                 </StackPanel>
                             </ScrollViewer>
                         </Border>
-                    </Grid>
+                    </local:AdaptiveCardPanel>
                 </Grid>
 
                 <Grid x:Name="CompareView" Visibility="Collapsed" Padding="24,16,24,20">
@@ -376,57 +375,85 @@
                     </Border>
                 </Grid>
 
-                <Grid x:Name="ControlsView" Visibility="Collapsed" Padding="24,16,24,20">
-                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock Text="Windows Update controls" Style="{StaticResource TitleTextBlockStyle}" />
-                            <TextBlock Text="Inspect requested and effective policy, then make audited, reversible device-local changes." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            <TextBlock x:Name="ControlsSummaryText" Text="Refresh to read Windows Update and Delivery Optimization policy." Foreground="{StaticResource WuPilotAccentBrush}" />
+                <Grid x:Name="ControlsView" Visibility="Collapsed" Padding="24,16,24,20" MaxWidth="1400" VerticalAlignment="Top">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="Update command center" Style="{StaticResource TitleTextBlockStyle}" />
+                        <TextBlock Text="Set the switches, review pending changes, then apply them together." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock x:Name="ControlsSummaryText" Text="Refresh to read Windows Update and Delivery Optimization policy." TextWrapping="Wrap" Foreground="{StaticResource WuPilotAccentBrush}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Refresh state" Click="RefreshSettings_Click" />
+                            <Button Content="More">
+                                <Button.Flyout><MenuFlyout>
+                                    <MenuFlyoutItem Text="Open Windows Update settings" Click="OpenWindowsUpdate_Click" />
+                                    <MenuFlyoutItem Text="Export policy audit" Click="ExportSettingsAudit_Click" />
+                                </MenuFlyout></Button.Flyout>
+                            </Button>
                         </StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                            <Button Content="Windows Settings" Click="OpenWindowsUpdate_Click" />
-                            <Button Content="Export audit" Click="ExportSettingsAudit_Click" />
-                            <Button Content="Refresh" Click="RefreshSettings_Click" Style="{StaticResource AccentButtonStyle}" />
-                        </StackPanel>
-                    </Grid>
-                    <Border Grid.Row="1" Style="{StaticResource SectionCardStyle}" Margin="0,16">
-                        <StackPanel Spacing="10">
-                            <TextBlock Text="Quick controls" FontWeight="SemiBold" />
-                            <TextBlock Text="Managed values can be requested locally after confirmation, but Group Policy or MDM may restore the effective value." Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button Content="Stage Microsoft products" Tag="update.microsoft-products" Click="QuickToggle_Click" />
-                                <Button Content="Stage latest updates" Tag="update.latest" Click="QuickToggle_Click" />
-                                <Button Content="Stage metered downloads" Tag="update.metered" Click="QuickToggle_Click" />
-                                <Button Content="Stage restart notices" Tag="update.restart-notifications" Click="QuickToggle_Click" />
-                                <Button Content="Stage pause today" Click="PauseUpdates_Click" />
-                                <Button Content="Stage resume" Click="ResumeUpdates_Click" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Spacing="12" Margin="0,16">
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="Everyday controls" FontSize="18" FontWeight="SemiBold" />
+                                <TextBlock Text="Switches stage changes. Review and apply writes them to this device. Managed policy may restore an effective value." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <ItemsControl ItemsSource="{x:Bind QuickControls}">
+                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><local:AdaptiveCardPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate><DataTemplate>
+                                        <Border Padding="16" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
+                                            <Grid ColumnSpacing="16">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <StackPanel Spacing="8">
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding Description}" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBlock Text="{Binding StateLabel}" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                </StackPanel>
+                                                <ToggleSwitch Grid.Column="1" VerticalAlignment="Top" IsOn="{Binding IsOn, Mode=OneWay}" IsEnabled="{Binding CanEdit}" Tag="{Binding}" Toggled="QuickControl_Toggled" OnContent="On" OffContent="Off" AutomationProperties.Name="{Binding DisplayName}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate></ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Pause and resume" FontWeight="SemiBold" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button x:Name="PauseUpdatesButton" Content="Pause updates" Click="PauseUpdates_Click" IsEnabled="False" />
+                                    <Button x:Name="ResumeUpdatesButton" Content="Resume updates" Click="ResumeUpdates_Click" IsEnabled="False" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="PauseStateText" Text="Refresh to read pause state." VerticalAlignment="Center" TextWrapping="Wrap" />
+                                </StackPanel>
                             </StackPanel>
-                        </StackPanel>
-                    </Border>
-                    <Grid Grid.Row="2" ColumnSpacing="16">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="1.25*" /><ColumnDefinition Width="0.9*" /></Grid.ColumnDefinitions>
+                        </Border>
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel Spacing="8">
+                                <TextBlock x:Name="PendingChangesText" Text="No pending changes" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                <ListView x:Name="PolicyChangeCartList" SelectionChanged="PolicyCart_SelectionChanged" ItemsSource="{x:Bind PolicyChangeCart}" MaxHeight="220">
+                                    <ListView.ItemTemplate><DataTemplate><StackPanel Padding="4"><TextBlock Text="{Binding Title}" FontWeight="SemiBold" /><TextBlock Text="{Binding Summary}" FontSize="11" TextWrapping="Wrap" /><TextBlock Text="{Binding Warning}" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ListView.ItemTemplate>
+                                </ListView>
+                                <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="RemoveCartButton" Content="Remove selected" IsEnabled="False" Click="RemovePolicyCartItem_Click" /><Button x:Name="DiscardCartButton" Content="Discard all" IsEnabled="False" Click="ClearPolicyCart_Click" /></StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    <Expander x:Name="ControlsAdvanced" Grid.Row="2" Header="Advanced policies and change history" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <local:AdaptiveCardPanel MinimumItemWidth="520">
                         <Border Style="{StaticResource SectionCardStyle}">
                             <Grid RowSpacing="10">
                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <TextBox x:Name="PolicyFilterBox" Width="300" PlaceholderText="Search policy, category, or value" TextChanged="PolicyFilter_Changed" />
-                                    <ComboBox x:Name="PolicyCategoryCombo" Width="160" PlaceholderText="All categories" SelectionChanged="PolicyFilterCombo_Changed" />
-                                    <ComboBox x:Name="PolicyOwnershipCombo" Width="130" SelectedIndex="0" SelectionChanged="PolicyFilterCombo_Changed"><ComboBoxItem Content="All owners" Tag="All" /><ComboBoxItem Content="Unconfigured" Tag="Unconfigured" /><ComboBoxItem Content="Group Policy" Tag="GroupPolicy" /><ComboBoxItem Content="MDM" Tag="Mdm" /><ComboBoxItem Content="Windows UX" Tag="WindowsUx" /></ComboBox>
-                                    <ComboBox x:Name="PolicyRiskCombo" Width="115" SelectedIndex="0" SelectionChanged="PolicyFilterCombo_Changed"><ComboBoxItem Content="All risks" Tag="All" /><ComboBoxItem Content="Normal" Tag="Normal" /><ComboBoxItem Content="Elevated" Tag="Elevated" /><ComboBoxItem Content="High" Tag="High" /></ComboBox>
-                                </StackPanel>
-                                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
-                                    <ComboBox x:Name="PolicyStateFilterCombo" Width="170" SelectedIndex="0" SelectionChanged="PolicyFilterCombo_Changed"><ComboBoxItem Content="All states" Tag="All" /><ComboBoxItem Content="Editable" Tag="Editable" /><ComboBoxItem Content="View only" Tag="ViewOnly" /><ComboBoxItem Content="Requested ≠ effective" Tag="Different" /><ComboBoxItem Content="Favorites" Tag="Favorites" /></ComboBox>
+                                <local:AdaptiveCardPanel MinimumItemWidth="220">
+                                    <TextBox x:Name="PolicyFilterBox" HorizontalAlignment="Stretch" PlaceholderText="Search policy, category, or value" TextChanged="PolicyFilter_Changed" />
+                                    <ComboBox x:Name="PolicyCategoryCombo" HorizontalAlignment="Stretch" PlaceholderText="All categories" SelectionChanged="PolicyFilterCombo_Changed" />
+                                    <ComboBox x:Name="PolicyOwnershipCombo" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="PolicyFilterCombo_Changed"><ComboBoxItem Content="All owners" Tag="All" /><ComboBoxItem Content="Unconfigured" Tag="Unconfigured" /><ComboBoxItem Content="Local" Tag="Local" /><ComboBoxItem Content="Runtime" Tag="Runtime" /><ComboBoxItem Content="Group Policy" Tag="GroupPolicy" /><ComboBoxItem Content="MDM" Tag="Mdm" /><ComboBoxItem Content="Windows UX" Tag="WindowsUx" /></ComboBox>
+                                    <ComboBox x:Name="PolicyRiskCombo" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="PolicyFilterCombo_Changed"><ComboBoxItem Content="All risks" Tag="All" /><ComboBoxItem Content="Normal" Tag="Normal" /><ComboBoxItem Content="Elevated" Tag="Elevated" /><ComboBoxItem Content="High" Tag="High" /></ComboBox>
+                                </local:AdaptiveCardPanel>
+                                <local:AdaptiveCardPanel Grid.Row="1" MinimumItemWidth="220" Margin="0,8,0,0">
+                                    <ComboBox x:Name="PolicyStateFilterCombo" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="PolicyFilterCombo_Changed"><ComboBoxItem Content="All states" Tag="All" /><ComboBoxItem Content="Editable" Tag="Editable" /><ComboBoxItem Content="View only" Tag="ViewOnly" /><ComboBoxItem Content="Requested ≠ effective" Tag="Different" /><ComboBoxItem Content="Favorites" Tag="Favorites" /></ComboBox>
                                     <CheckBox x:Name="ShowLegacyPolicyCheck" Content="Show legacy / unsupported" Checked="PolicyFilter_Changed" Unchecked="PolicyFilter_Changed" VerticalAlignment="Center" />
                                     <TextBlock x:Name="VisiblePolicyCountText" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                </StackPanel>
-                                <ListView x:Name="PolicyList" Grid.Row="2" ItemsSource="{x:Bind VisiblePolicies}" SelectionChanged="PolicyList_SelectionChanged">
+                                </local:AdaptiveCardPanel>
+                                <ListView x:Name="PolicyList" MaxHeight="480" Grid.Row="2" ItemsSource="{x:Bind VisiblePolicies}" SelectionChanged="PolicyList_SelectionChanged">
                                     <ListView.ItemTemplate><DataTemplate><Grid Padding="8" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="36" /><ColumnDefinition Width="*" /><ColumnDefinition Width="180" /></Grid.ColumnDefinitions><Button Content="{Binding FavoriteGlyph}" Tag="{Binding}" Click="FavoritePolicy_Click" ToolTipService.ToolTip="Add or remove favorite" /><StackPanel Grid.Column="1" Spacing="2"><TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock Text="{Binding Description}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" /><TextBlock Text="{Binding Category}" FontSize="11" Foreground="{StaticResource WuPilotAccentBrush}" /></StackPanel><StackPanel Grid.Column="2" HorizontalAlignment="Right"><TextBlock Text="{Binding ValueLabel}" FontWeight="SemiBold" HorizontalAlignment="Right" TextWrapping="Wrap" /><TextBlock Text="{Binding OwnershipLabel}" FontSize="11" HorizontalAlignment="Right" /><TextBlock Text="{Binding EditLabel}" FontSize="11" HorizontalAlignment="Right" /></StackPanel></Grid></DataTemplate></ListView.ItemTemplate>
                                 </ListView>
                             </Grid>
                         </Border>
-                        <Border Grid.Column="1" Style="{StaticResource SectionCardStyle}">
+                        <Border Style="{StaticResource SectionCardStyle}">
                             <ScrollViewer><StackPanel Spacing="10">
                                 <TextBlock Text="Selected policy" FontWeight="SemiBold" />
                                 <TextBlock x:Name="PolicyDetailTitle" Text="Select a policy." FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
@@ -442,11 +469,6 @@
                                     <Button x:Name="ApplyPolicyButton" Content="Stage change" Click="ApplyPolicy_Click" IsEnabled="False" Style="{StaticResource AccentButtonStyle}" />
                                     <Button x:Name="ClearPolicyButton" Content="Stage Windows default" Click="ClearPolicy_Click" IsEnabled="False" />
                                 </StackPanel>
-                                <TextBlock Text="Pending change cart" FontWeight="SemiBold" Margin="0,12,0,0" />
-                                <ListView x:Name="PolicyChangeCartList" ItemsSource="{x:Bind PolicyChangeCart}" MaxHeight="220">
-                                    <ListView.ItemTemplate><DataTemplate><StackPanel Padding="4"><TextBlock Text="{Binding Title}" FontWeight="SemiBold" /><TextBlock Text="{Binding Summary}" FontSize="11" TextWrapping="Wrap" /><TextBlock Text="{Binding Warning}" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ListView.ItemTemplate>
-                                </ListView>
-                                <StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Apply cart and verify" Click="ApplyPolicyCart_Click" Style="{StaticResource AccentButtonStyle}" /><Button Content="Remove selected" Click="RemovePolicyCartItem_Click" /><Button Content="Clear cart" Click="ClearPolicyCart_Click" /></StackPanel>
                                 <TextBlock Text="Recent changes" FontWeight="SemiBold" Margin="0,12,0,0" />
                                 <ListView x:Name="SettingsAuditList" ItemsSource="{x:Bind SettingsAudit}" MaxHeight="260">
                                     <ListView.ItemTemplate><DataTemplate><StackPanel Padding="4"><TextBlock Text="{Binding Title}" FontWeight="SemiBold" /><TextBlock Text="{Binding Summary}" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ListView.ItemTemplate>
@@ -454,7 +476,8 @@
                                 <StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Restore selected change" Click="RestoreSetting_Click" /><Button Content="Copy audit details" Click="CopyAuditDetails_Click" /></StackPanel>
                             </StackPanel></ScrollViewer>
                         </Border>
-                    </Grid>
+                    </local:AdaptiveCardPanel>
+                    </Expander>
                 </Grid>
 
                 <Grid x:Name="PerformanceView" Visibility="Collapsed" Padding="24,16,24,20">
@@ -646,7 +669,7 @@
                         <ToggleSwitch x:Name="TaskbarAttentionToggle" Header="Flash the taskbar when an operation finishes while WuPilot is not focused" IsOn="True" Toggled="TaskbarAttentionToggle_Toggled" />
                         <Button Content="Reset saved layout and filters" Click="ResetPreferences_Click" HorizontalAlignment="Left" />
                         <TextBlock Text="Keyboard shortcuts" FontWeight="SemiBold" FontSize="18" />
-                        <TextBlock Text="Ctrl+1 Scan · Ctrl+2 Update controls · Ctrl+3 Performance · Ctrl+F Search · F5 Refresh · Ctrl+Enter Start scan · Esc Cancel · Ctrl+Shift+E Export evidence" TextWrapping="Wrap" />
+                        <TextBlock Text="Ctrl+1 Scan · Ctrl+2 Command center · Ctrl+3 Performance · Ctrl+F Search · F5 Refresh · Ctrl+Enter Start scan · Esc Cancel · Ctrl+Shift+E Export evidence" TextWrapping="Wrap" />
                         <TextBlock Text="Application updates" FontWeight="SemiBold" FontSize="18" />
                         <TextBlock x:Name="AppUpdateStatusText" Text="WuPilot checks for stable releases when it launches. Cached release metadata keeps the check lightweight." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <Button Content="Check for updates" Click="CheckForUpdates_Click" HorizontalAlignment="Left" />
@@ -658,6 +681,14 @@
                 </Grid>
             </Grid>
             </ScrollViewer>
+                <Border x:Name="ControlsActionBar" Grid.Row="2" Visibility="Collapsed" MaxWidth="1400" Margin="24,0,24,8" Padding="16,12" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock x:Name="StickyPendingText" Text="No pending changes" TextWrapping="Wrap" VerticalAlignment="Center" />
+                        <Button x:Name="ApplyCartButton" Grid.Column="1" Content="Review and apply" IsEnabled="False" Click="ApplyPolicyCart_Click" Style="{StaticResource AccentButtonStyle}" />
+                    </Grid>
+                </Border>
+            </Grid>
         </NavigationView>
 
         <Grid Grid.Row="2" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" Padding="12,4">

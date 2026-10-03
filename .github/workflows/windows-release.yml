@@ -255,6 +255,11 @@ jobs:
           Portable ZIPs contain the full desktop app: extract all files, then run WuPilot.exe. Standalone WuPilot-Collector executables collect and analyze logs without installing WuPilot or .NET. Run with --help for usage.
           "@
 
+          $releaseNotesPath = "docs/releases/$env:RELEASE_VERSION.md"
+          if (Test-Path -LiteralPath $releaseNotesPath -PathType Leaf) {
+            $preamble += "`n`n" + (Get-Content -LiteralPath $releaseNotesPath -Raw)
+          }
+
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $assets --clobber

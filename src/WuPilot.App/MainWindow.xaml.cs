@@ -9,6 +9,7 @@ using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 using Windows.ApplicationModel.DataTransfer;
@@ -55,6 +56,12 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private DiagnosticSnapshot? _diagnostics;
     private UpdateListItem? _selectedUpdate;
     private bool _isBusy;
+    private bool _syncingQuickControls;
+    private bool _applyingSettings;
+    private bool _readingSettings;
+    private bool _historyLoaded;
+    private bool _sourcesLoaded;
+    private Task? _settingsRefreshTask;
     private bool _collectingLogs;
     private bool _checkingAppUpdate;
     private Task? _performanceRefreshTask;
@@ -89,6 +96,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     public ObservableCollection<SettingAuditItem> SettingsAudit { get; } = [];
     public ObservableCollection<OperationMetricItem> VisibleMetrics { get; } = [];
     public ObservableCollection<PolicyChoiceItem> PolicyChoices { get; } = [];
+    public ObservableCollection<QuickControlItem> QuickControls { get; } = [];
     public ObservableCollection<StagedPolicyChangeItem> PolicyChangeCart { get; } = [];
     public ObservableCollection<CompletionNoticeItem> CompletionNotices { get; } = [];
     public ObservableCollection<UpdateHistoryItem> UpdateHistory { get; } = [];
@@ -140,6 +148,9 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         _completionNoticeStore = new JsonCompletionNoticeStore();
         _shellProgressService = new WindowsShellProgressService();
         _clock = new SystemClock();
+        foreach (var id in new[] { "update.microsoft-products", "update.latest", "update.metered", "update.restart-notifications" })
+            QuickControls.Add(new QuickControlItem(PolicyCatalog.All.First(definition => definition.Id == id)));
+        PolicyChangeCart.CollectionChanged += (_, _) => SyncCommandCenter();
         AppWindow.Closing += AppWindow_Closing;
         AppWindow.Changed += AppWindow_Changed;
         Activated += MainWindow_Activated;
@@ -1032,7 +1043,9 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private void UpdateWatchlistSummary()
     {
         if (WatchlistSummaryText is null) return;
-        WatchlistSummaryText.Text = $"{WatchedUpdates.Count} watched · {WatchedUpdates.Count(static item => item.Update.IsOfferedInLastScan == true)} offered in latest scan · {WatchedUpdates.Count(static item => item.Update.IsOfferedInLastScan == false)} no longer offered";
+        WatchlistSummaryText.Text = WatchedUpdates.Count == 0
+            ? "Select an update in Scan and review, then choose Add to watchlist."
+            : $"{WatchedUpdates.Count} watched · {WatchedUpdates.Count(static item => item.Update.IsOfferedInLastScan == true)} offered in latest scan · {WatchedUpdates.Count(static item => item.Update.IsOfferedInLastScan == false)} no longer offered";
     }
 
     private void CopyActivity_Click(object sender, RoutedEventArgs e)
@@ -1132,6 +1145,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             var records = await _historyProvider.GetRecentHistoryAsync(500, _operationCancellation.Token);
+            _historyLoaded = true;
             _allUpdateHistory.Clear();
             _allUpdateHistory.AddRange(records.Select(static record => new UpdateHistoryItem(record)));
             Replace(UpdateHistory, _allUpdateHistory.Take(25));
@@ -1250,6 +1264,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             var sources = await _sourceDiscoveryService.GetRegisteredSourcesAsync(_operationCancellation.Token);
+            _sourcesLoaded = true;
             Replace(RegisteredSources, sources.Select(static source => new UpdateSourceRegistrationItem(source)));
             RegisteredSourcesSummaryText.Text = $"{sources.Count} registered services · {sources.Count(static source => source.OffersWindowsUpdates)} offer Windows updates · {sources.Count(static source => source.IsManaged)} managed";
             Log($"Loaded {sources.Count} registered Windows Update Agent services.");
@@ -1299,8 +1314,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ShowComparison_Click(object sender, RoutedEventArgs e)
     {
-        Navigation.SelectedItem = CompareNav;
-        ShowView("compare");
+        NavigateTo("compare");
     }
 
     private void ReturnToScan_Click(object sender, RoutedEventArgs e)
@@ -1330,6 +1344,11 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private void ShowView(string tag)
     {
         _currentPageTag = tag;
+        ControlsActionBar.Visibility = tag == "controls" ? Visibility.Visible : Visibility.Collapsed;
+        ScanToolsBar.Visibility = tag is "scan" or "compare" or "watchlist" or "sources" ? Visibility.Visible : Visibility.Collapsed;
+        RecordsToolsBar.Visibility = tag is "history" or "activity" ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var tab in ScanToolsBar.Children.Concat(RecordsToolsBar.Children).OfType<ToggleButton>())
+            tab.IsChecked = string.Equals(tab.Tag as string, tag, StringComparison.Ordinal);
         ScanView.Visibility = tag == "scan" ? Visibility.Visible : Visibility.Collapsed;
         CompareView.Visibility = tag == "compare" ? Visibility.Visible : Visibility.Collapsed;
         WatchlistView.Visibility = tag == "watchlist" ? Visibility.Visible : Visibility.Collapsed;
@@ -1343,14 +1362,22 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         PageScrollViewer.ChangeView(horizontalOffset: 0, verticalOffset: 0, zoomFactor: null, disableAnimation: true);
         if (tag == "controls" && _allPolicyStates.Count == 0) _ = RefreshSettingsAsync();
         if (tag == "performance") _ = RefreshPerformanceAsync();
+        if (tag == "sources" && !_sourcesLoaded && !_isBusy) RefreshSources_Click(RootGrid, new RoutedEventArgs());
+        if (tag == "history" && !_historyLoaded && !_isBusy) RefreshHistory_Click(RootGrid, new RoutedEventArgs());
         SavePreferencesSoon();
     }
 
     private void NavigateTo(string tag)
     {
-        var item = Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(candidate => string.Equals(candidate.Tag as string, tag, StringComparison.Ordinal));
+        var parent = tag is "compare" or "watchlist" or "sources" ? "scan" : tag == "activity" ? "history" : tag;
+        var item = Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(candidate => string.Equals(candidate.Tag as string, parent, StringComparison.Ordinal));
         if (item is not null) Navigation.SelectedItem = item;
         ShowView(item is null ? "scan" : tag);
+    }
+
+    private void WorkspaceTab_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleButton { Tag: string tag }) NavigateTo(tag);
     }
 
     private void UpdateScanInsights(ScanReport report)
@@ -1454,27 +1481,37 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         return false;
     }
 
-    private async void RefreshSettings_Click(object sender, RoutedEventArgs e) => await RefreshSettingsAsync();
-
-    private async Task RefreshSettingsAsync()
+    private async void RefreshSettings_Click(object sender, RoutedEventArgs e)
     {
+        if (!_applyingSettings) await RefreshSettingsAsync();
+    }
+
+    private Task RefreshSettingsAsync() => _settingsRefreshTask is { IsCompleted: false }
+        ? _settingsRefreshTask : _settingsRefreshTask = ReadSettingsAsync();
+
+    private async Task ReadSettingsAsync()
+    {
+        _readingSettings = true;
+        SyncCommandCenter();
         try
         {
             var snapshot = await _settingsService.GetSnapshotAsync(CancellationToken.None);
+            var audit = await _settingsService.GetAuditAsync(CancellationToken.None);
             _allPolicyStates.Clear();
             var favorites = _preferences.FavoritePolicyIds ?? Array.Empty<string>();
             _allPolicyStates.AddRange(snapshot.Policies.Select(state => new PolicyStateItem(state, favorites.Contains(state.Definition.Id))));
             EnsurePolicyCategoryOptions();
-            var audit = await _settingsService.GetAuditAsync(CancellationToken.None);
             Replace(SettingsAudit, audit.Take(25).Select(static entry => new SettingAuditItem(entry)));
             ApplyPolicyFilter();
             ControlsSummaryText.Text = $"{snapshot.Policies.Count} policies · Windows build {snapshot.WindowsBuild} · {snapshot.Policies.Count(static policy => policy.CanEdit)} locally editable";
+            SyncCommandCenter();
         }
         catch (Exception exception)
         {
             ControlsSummaryText.Text = $"Settings unavailable: {exception.Message}";
             Log($"Settings refresh failed: {exception.Message}");
         }
+        finally { _readingSettings = false; SyncCommandCenter(); }
     }
 
     private void PolicyFilter_Changed(object sender, RoutedEventArgs e) { ApplyPolicyFilter(); SavePreferencesSoon(); }
@@ -1506,7 +1543,9 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
              item.DisplayName.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
              item.Category.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
              item.ValueLabel.Contains(query, StringComparison.CurrentCultureIgnoreCase)));
+        var selectedId = (PolicyList.SelectedItem as PolicyStateItem)?.State.Definition.Id;
         Replace(VisiblePolicies, filtered.OrderBy(static item => item.Category).ThenBy(static item => item.DisplayName));
+        PolicyList.SelectedItem = VisiblePolicies.FirstOrDefault(item => item.State.Definition.Id == selectedId);
         VisiblePolicyCountText.Text = $"{VisiblePolicies.Count} shown";
     }
 
@@ -1528,6 +1567,12 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         if (PolicyList.SelectedItem is not PolicyStateItem item)
         {
             ApplyPolicyButton.IsEnabled = ClearPolicyButton.IsEnabled = false;
+            PolicyDetailTitle.Text = "Select a policy.";
+            PolicyDetailStatus.Text = "Choose a policy to inspect its current value and stage a change.";
+            PolicyBooleanEditor.Visibility = PolicyChoiceEditor.Visibility = PolicyNumberEditor.Visibility =
+                PolicyDateEditor.Visibility = PolicyValueBox.Visibility = Visibility.Collapsed;
+            PolicyDocumentationLink.Visibility = Visibility.Collapsed;
+            PolicyValidationInfo.IsOpen = false;
             return;
         }
         PolicyDetailTitle.Text = item.DisplayName;
@@ -1562,17 +1607,39 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         await Task.CompletedTask;
     }
 
-    private async void QuickToggle_Click(object sender, RoutedEventArgs e)
+    private void SyncCommandCenter()
     {
-        if (sender is not Button { Tag: string id }) return;
-        var state = _allPolicyStates.FirstOrDefault(item => item.State.Definition.Id == id);
-        if (state is null || !state.State.CanEdit)
+        if (PendingChangesText is null) return;
+        _syncingQuickControls = true;
+        try
         {
-            await ShowMessageAsync("Control unavailable", state?.Status ?? "Refresh settings before using quick controls.");
-            return;
+            foreach (var control in QuickControls)
+                control.Update(_allPolicyStates.FirstOrDefault(item => item.State.Definition.Id == control.Id)?.State,
+                    PolicyChangeCart.FirstOrDefault(item => item.Change.PolicyId == control.Id)?.Change, _isBusy || _applyingSettings || _readingSettings);
+            PendingChangesText.Text = PolicyChangeCart.Count == 0 ? "No pending changes" : $"{PolicyChangeCart.Count} pending change(s) · device settings unchanged until applied";
+            StickyPendingText.Text = PolicyChangeCart.Count == 0 ? "No pending changes" : $"{PolicyChangeCart.Count} pending change(s) · not yet applied";
+            ApplyCartButton.IsEnabled = PolicyChangeCart.Count > 0 && !_isBusy && !_applyingSettings && !_readingSettings;
+            DiscardCartButton.IsEnabled = PolicyChangeCart.Count > 0 && !_isBusy && !_applyingSettings;
+            RemoveCartButton.IsEnabled = PolicyChangeCartList.SelectedItem is not null && !_isBusy && !_applyingSettings;
+            ApplyPolicyButton.IsEnabled = ClearPolicyButton.IsEnabled = PolicyList.SelectedItem is PolicyStateItem { State.CanEdit: true } && !_isBusy && !_applyingSettings && !_readingSettings;
+            var pause = _allPolicyStates.Where(item => item.State.Definition.Id is "update.pause-quality-start" or "update.pause-feature-start").ToArray();
+            PauseUpdatesButton.IsEnabled = ResumeUpdatesButton.IsEnabled = pause.Length == 2 && pause.All(item => item.State.CanEdit) && !_isBusy && !_applyingSettings && !_readingSettings;
+            PauseStateText.Text = pause.Length == 0 ? "Refresh to read pause state." : string.Join(" · ", pause.Select(item =>
+            {
+                var pending = PolicyChangeCart.FirstOrDefault(entry => entry.Change.PolicyId == item.State.Definition.Id);
+                var label = item.State.Definition.Id == "update.pause-quality-start" ? "Quality" : "Feature";
+                return $"{label}: {(pending is null ? item.State.EffectiveValue ?? "Windows default" : pending.Change.Remove ? "resume pending" : "pause pending")}";
+            }));
         }
-        StagePolicyChange(state, state.State.EffectiveValue == "1" ? "0" : "1", false);
-        StatusText.Text = $"{state.DisplayName} staged. Review the change cart.";
+        finally { _syncingQuickControls = false; }
+    }
+
+    private void QuickControl_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_syncingQuickControls || sender is not ToggleSwitch { Tag: QuickControlItem control } toggle || toggle.IsOn == control.IsOn) return;
+        var state = _allPolicyStates.FirstOrDefault(item => item.State.Definition.Id == control.Id);
+        if (state is null || !state.State.CanEdit || _isBusy || _applyingSettings || _readingSettings) { SyncCommandCenter(); return; }
+        StagePolicyChange(state, toggle.IsOn ? "1" : "0", false);
     }
 
     private async void PauseUpdates_Click(object sender, RoutedEventArgs e)
@@ -1592,25 +1659,37 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task<bool> ApplySettingChangesAsync(IReadOnlyList<SettingChange> changes, PolicyRisk risk)
     {
-        var warning = risk == PolicyRisk.High
-            ? "This can change update sources, safeguards, or user access. A bad value can prevent updates."
-            : "This writes elevated device-local Windows Update policy or Settings state. Domain or MDM policy may overwrite it.";
-        if (!await ConfirmAsync("Apply Windows Update settings?", $"{warning}\n\n{changes.Count} staged change(s) will be journaled, verified as one transaction, and rolled back together if any write fails.")) return false;
-        SetBusy(true, "Applying and verifying settings…", cancellable: false);
+        if (_isBusy || _applyingSettings) return false;
+        _applyingSettings = true;
+        SyncCommandCenter();
         try
         {
-            var result = await _settingsService.ApplyAsync(changes, CancellationToken.None);
-            Log($"Settings batch {result.BatchId}: {result.Summary}");
-            await RefreshSettingsAsync();
-            await ShowMessageAsync(result.Succeeded ? "Settings applied" : "Settings rolled back", result.Summary);
-            return result.Succeeded;
+            if (_settingsRefreshTask is { IsCompleted: false }) await _settingsRefreshTask;
+            var warning = risk == PolicyRisk.High
+                ? "This can change update sources, safeguards, or user access. A bad value can prevent updates."
+                : "This writes elevated device-local Windows Update policy or Settings state. Domain or MDM policy may overwrite it.";
+            var review = string.Join("\n\n", PolicyChangeCart.Select(item => $"{item.Title}\n{item.Summary}"));
+            if (!await ConfirmAsync("Apply Windows Update settings?", $"{review}\n\n{warning}\n\n{changes.Count} change(s) will be journaled, verified together, and rolled back if any write fails.")) return false;
+            if (_isBusy) return false;
+            SetBusy(true, "Applying and verifying settings…", cancellable: false);
+            try
+            {
+                var result = await _settingsService.ApplyAsync(changes, CancellationToken.None);
+                Log($"Settings batch {result.BatchId}: {result.Summary}");
+                await RefreshSettingsAsync();
+                await ShowMessageAsync(result.Succeeded ? "Settings applied" : "Settings rolled back", result.Summary);
+                return result.Succeeded;
+            }
+            catch (Exception exception) { await ShowMessageAsync("Settings change failed", exception.Message); return false; }
+            finally { SetBusy(false, "Ready"); }
         }
-        catch (Exception exception) { await ShowMessageAsync("Settings change failed", exception.Message); return false; }
-        finally { SetBusy(false, "Ready"); }
+        finally { _applyingSettings = false; SyncCommandCenter(); }
     }
 
     private void ConfigurePolicyEditor(PolicyState state)
     {
+        var pending = PolicyChangeCart.FirstOrDefault(item => item.Change.PolicyId == state.Definition.Id);
+        var value = pending is null ? state.RequestedValue ?? state.EffectiveValue : pending.Change.AfterValue;
         PolicyValidationInfo.IsOpen = false;
         PolicyBooleanEditor.Visibility = PolicyChoiceEditor.Visibility = PolicyNumberEditor.Visibility =
             PolicyDateEditor.Visibility = PolicyValueBox.Visibility = Visibility.Collapsed;
@@ -1619,27 +1698,27 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         {
             case PolicyValueKind.Boolean:
                 PolicyBooleanEditor.Visibility = Visibility.Visible;
-                PolicyBooleanEditor.IsOn = state.RequestedValue == "1";
+                PolicyBooleanEditor.IsOn = value == "1";
                 break;
             case PolicyValueKind.Choice:
                 PolicyChoices.Clear();
                 foreach (var choice in definition.Choices ?? new Dictionary<string, string>())
                     PolicyChoices.Add(new(choice.Key, choice.Value));
-                PolicyChoiceEditor.SelectedItem = PolicyChoices.FirstOrDefault(choice => choice.Value == state.RequestedValue) ?? PolicyChoices.FirstOrDefault();
+                PolicyChoiceEditor.SelectedItem = PolicyChoices.FirstOrDefault(choice => choice.Value == value) ?? PolicyChoices.FirstOrDefault();
                 PolicyChoiceEditor.Visibility = Visibility.Visible;
                 break;
             case PolicyValueKind.Integer:
                 PolicyNumberEditor.Minimum = definition.Minimum ?? int.MinValue;
                 PolicyNumberEditor.Maximum = definition.Maximum ?? int.MaxValue;
-                PolicyNumberEditor.Value = double.TryParse(state.RequestedValue, out var number) ? number : definition.Minimum ?? 0;
+                PolicyNumberEditor.Value = double.TryParse(value, out var number) ? number : definition.Minimum ?? 0;
                 PolicyNumberEditor.Visibility = Visibility.Visible;
                 break;
             case PolicyValueKind.DateTime:
-                PolicyDateEditor.Date = DateTimeOffset.TryParse(state.RequestedValue, out var date) ? date : DateTimeOffset.Now;
+                PolicyDateEditor.Date = DateTimeOffset.TryParse(value, out var date) ? date : DateTimeOffset.Now;
                 PolicyDateEditor.Visibility = Visibility.Visible;
                 break;
             default:
-                PolicyValueBox.Text = state.RequestedValue ?? string.Empty;
+                PolicyValueBox.Text = value ?? string.Empty;
                 PolicyValueBox.Visibility = Visibility.Visible;
                 break;
         }
@@ -1660,16 +1739,21 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private void StagePolicyChange(PolicyStateItem item, string? value, bool remove)
     {
-        var normalized = PolicyValueValidator.Normalize(item.State.Definition, value, remove);
-        var change = new StagedPolicyChange(item.State.Definition.Id, item.DisplayName, item.State.RequestedValue, normalized, remove,
-            item.State.Ownership, item.State.Definition.Risk, item.State.Definition.RequiresRestart,
-            item.State.Ownership is PolicyOwnership.Mdm or PolicyOwnership.GroupPolicy
-                ? "A management refresh may ignore or revert this local request."
-                : item.State.Status);
-        var existing = PolicyChangeCart.FirstOrDefault(entry => entry.Change.PolicyId == change.PolicyId);
-        if (existing is null) PolicyChangeCart.Add(new(change));
-        else PolicyChangeCart[PolicyChangeCart.IndexOf(existing)] = new(change);
-        StatusText.Text = $"{item.DisplayName} staged. No device setting has changed.";
+        if (_isBusy || _applyingSettings || _readingSettings || !item.State.CanEdit) return;
+        var existing = PolicyChangeCart.FirstOrDefault(entry => entry.Change.PolicyId == item.State.Definition.Id);
+        var change = PolicyChangePlanner.Stage(item.State, existing?.Change, value, remove);
+        if (change is null)
+        {
+            if (existing is not null) PolicyChangeCart.Remove(existing);
+            StatusText.Text = $"{item.DisplayName}: pending change cleared.";
+        }
+        else
+        {
+            if (existing is null) PolicyChangeCart.Add(new(change));
+            else PolicyChangeCart[PolicyChangeCart.IndexOf(existing)] = new(change);
+            StatusText.Text = $"{item.DisplayName} staged. Review pending changes.";
+        }
+        SyncCommandCenter();
     }
 
     private void FavoritePolicy_Click(object sender, RoutedEventArgs e)
@@ -1682,6 +1766,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void ApplyPolicyCart_Click(object sender, RoutedEventArgs e)
     {
+        if (_isBusy || _applyingSettings) return;
         if (PolicyChangeCart.Count == 0)
         {
             await ShowMessageAsync("Change cart is empty", "Stage one or more editable policies first.");
@@ -1695,10 +1780,18 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RemovePolicyCartItem_Click(object sender, RoutedEventArgs e)
     {
+        if (_isBusy || _applyingSettings) return;
         if (PolicyChangeCartList.SelectedItem is StagedPolicyChangeItem selected) PolicyChangeCart.Remove(selected);
     }
 
-    private void ClearPolicyCart_Click(object sender, RoutedEventArgs e) => PolicyChangeCart.Clear();
+    private void ClearPolicyCart_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isBusy || _applyingSettings) return;
+        PolicyChangeCart.Clear();
+        SyncCommandCenter();
+    }
+
+    private void PolicyCart_SelectionChanged(object sender, SelectionChangedEventArgs e) => SyncCommandCenter();
 
     private void CopyAuditDetails_Click(object sender, RoutedEventArgs e)
     {
@@ -1721,15 +1814,26 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void RestoreSetting_Click(object sender, RoutedEventArgs e)
     {
-        if (SettingsAuditList.SelectedItem is not SettingAuditItem selected) return;
-        if (!await ConfirmAsync("Restore previous value?", $"{selected.Title}\n\nWuPilot will refuse restoration if the setting drifted after this change.")) return;
+        if (_isBusy || _applyingSettings || SettingsAuditList.SelectedItem is not SettingAuditItem selected) return;
+        _applyingSettings = true;
+        SyncCommandCenter();
         try
         {
-            var result = await _settingsService.RestoreAsync(selected.Entry.Id, allowConflict: false, CancellationToken.None);
-            Log($"Restored setting from audit {selected.Entry.Id}: {result.Summary}");
-            await RefreshSettingsAsync();
+            if (_settingsRefreshTask is { IsCompleted: false }) await _settingsRefreshTask;
+            if (!await ConfirmAsync("Restore previous value?", $"{selected.Title}\n\nWuPilot will refuse restoration if the setting drifted after this change.")) return;
+            if (_isBusy) return;
+            SetBusy(true, "Restoring and verifying settings…", cancellable: false);
+            try
+            {
+                var result = await _settingsService.RestoreAsync(selected.Entry.Id, allowConflict: false, CancellationToken.None);
+                Log($"Restored setting from audit {selected.Entry.Id}: {result.Summary}");
+                await RefreshSettingsAsync();
+                await ShowMessageAsync(result.Succeeded ? "Setting restored" : "Restore stopped", result.Summary);
+            }
+            finally { SetBusy(false, "Ready"); }
         }
         catch (Exception exception) { await ShowMessageAsync("Restore stopped", exception.Message); }
+        finally { _applyingSettings = false; SyncCommandCenter(); }
     }
 
     private IReadOnlyList<UpgradeTimeline> _bundleTimelines = [];
@@ -1905,6 +2009,11 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
                 return;
             }
             AppUpdateStatusText.Text = $"{release.Name} is available.";
+            if (!force)
+            {
+                Log($"{release.Name} is available. Open About to review and download the update.");
+                return;
+            }
             if (_isBusy || _collectingLogs) return;
             if (!await ConfirmAsync("WuPilot update available", $"{release.Name}\nPublished {release.PublishedAt:g}\n{release.Size / 1024d / 1024d:0.0} MB\n\n{release.Notes}\n\nDownload and verify the {RuntimeArchitectureLabel()} installer?")) return;
             if (_isBusy || _collectingLogs) return;
@@ -1960,6 +2069,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
         var wasBusy = _isBusy;
         _isBusy = busy;
+        SyncCommandCenter();
         BusyRing.IsActive = busy;
         ScanButton.IsEnabled = !busy;
         CancelButton.IsEnabled = busy;
@@ -2135,6 +2245,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private void FocusActiveSearch()
     {
+        if (_currentPageTag == "controls") ControlsAdvanced.IsExpanded = true;
         Control? control = _currentPageTag switch
         {
             "scan" => FilterBox,
@@ -2143,12 +2254,26 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             "history" => HistoryFilterBox,
             _ => null
         };
-        control?.Focus(FocusState.Keyboard);
+        var searchPage = _currentPageTag;
+        DispatcherQueue.TryEnqueue(async () =>
+        {
+            // The expander animates its height; wait for its scroll extent before revealing search.
+            if (searchPage == "controls") await Task.Delay(350);
+            if (_currentPageTag != searchPage) return;
+            PageScrollViewer.UpdateLayout();
+            control?.Focus(FocusState.Keyboard);
+            control?.StartBringIntoView();
+            if (_currentPageTag == "controls" && control is not null)
+            {
+                var position = control.TransformToVisual(PageScrollViewer).TransformPoint(new Windows.Foundation.Point(0, 0));
+                PageScrollViewer.ChangeView(null, Math.Max(0, PageScrollViewer.VerticalOffset + position.Y - 24), null, disableAnimation: true);
+            }
+        });
     }
 
     private void RefreshActivePage()
     {
-        if (_isBusy) return;
+        if (_isBusy || _applyingSettings) return;
         switch (_currentPageTag)
         {
             case "controls": _ = RefreshSettingsAsync(); break;
@@ -2215,7 +2340,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private static string ReadablePage(string tag) => tag switch
     {
         "scan" => "Scan and review",
-        "controls" => "Update controls",
+        "controls" => "Command center",
         "performance" => "Performance",
         "diagnostics" => "Diagnostics",
         "history" => "Update history",

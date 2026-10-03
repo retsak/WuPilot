@@ -10,6 +10,18 @@ The application is intentionally local and policy-aware. It does not approve dri
 
 ## Scan and review
 
+The sidebar groups work into **Scan and review**, **Command center**, **Performance**, **Diagnostics**, **Records**, and **About**. The scan workspace has secondary tabs for **Compare scans**, **Watchlist**, and **Registered sources**. **Records** contains **Update history** and **Session activity**. Saved navigation and completion notices still open the appropriate secondary tab.
+
+## Command center
+
+Everyday update settings use switches with effective, requested, and pending state shown separately. Flip a switch to stage a change; flip it back to remove that pending change. **Review and apply** shows the proposed values and confirms one audited transaction. **Discard all** resets the switches to the last read state. Nothing writes to Windows until the transaction is confirmed.
+
+Pause and resume share the same pending-changes area. Unsupported or read-only controls are disabled and explain their status. Settings refreshes preserve pending changes and their original drift expectations. **Advanced policies and change history** expands the complete policy workbench, typed editors, favorites, filters, audit, and restoration controls. **Ctrl+F** opens this section and focuses its search.
+
+Cards wrap and grow with their text; the advanced workbench stacks on narrower windows. Startup application-update checks report availability in About and session activity without opening a download dialog. **About → Check for updates** retains the explicit download-and-verification workflow.
+
+## Scan setup
+
 ### Update sources
 
 WuPilot can query one or more sources sequentially in a single scan:
@@ -174,13 +186,13 @@ Every repair action presents a confirmation first and is recorded in **Activity*
 
 ## Update history
 
-The dedicated **Update history** page loads up to 500 recent local WUA history records without starting a new scan. Search covers title, HRESULT, source, and UpdateID. **Failures and partial results only** narrows the view to failed, aborted, or partially successful operations.
+The **Update history** tab under **Records** automatically loads up to 500 recent local WUA history records on first opening without starting a new scan. Search covers title, HRESULT, source, and UpdateID. **Failures and partial results only** narrows the view to failed, aborted, or partially successful operations.
 
 Each row includes date, operation, result, HRESULT, UpdateID, and source/client context. **Copy visible** copies only the currently filtered records. Reading history does not alter it.
 
-## Update controls
+## Command center
 
-The **Update controls** page is an elevated, device-local policy workbench. It reads more than 45 generally available Windows Update and Delivery Optimization controls, including offerings, driver inclusion, feature and quality deferrals, target release, WSUS and scan sources, automatic-update schedules, active hours, deadlines, notifications, peer selection, bandwidth, cache, upload, and Connected Cache configuration.
+The **Command center** is an elevated, device-local policy workbench. It reads more than 45 generally available Windows Update and Delivery Optimization controls, including offerings, driver inclusion, feature and quality deferrals, target release, WSUS and scan sources, automatic-update schedules, active hours, deadlines, notifications, peer selection, bandwidth, cache, upload, and Connected Cache configuration.
 
 Each row distinguishes:
 

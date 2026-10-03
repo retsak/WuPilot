@@ -16,6 +16,7 @@
     <Compile Include="../../src/WuPilot.App/App.xaml.cs" Link="App.xaml.cs" />
     <Compile Include="../../src/WuPilot.App/MainWindow.xaml.cs" Link="MainWindow.xaml.cs" />
     <Compile Include="../../src/WuPilot.App/UiModels.cs" Link="UiModels.cs" />
+    <Compile Include="../../src/WuPilot.App/AdaptiveCardPanel.cs" Link="AdaptiveCardPanel.cs" />
     <Compile Include="GeneratedXamlStubs.cs" />
   </ItemGroup>
 </Project>
