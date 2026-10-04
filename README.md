@@ -26,6 +26,7 @@ New for the next release: **Performance → Upgrade logs and reports** collects 
 - Correlate an offered driver to the currently installed signed PnP driver using exact/family hardware identifiers, including current version/date, INF, signer, and match confidence.
 - Track selected updates in a persistent watchlist and see whether each one is still offered after a later scan.
 - Browse and filter up to 500 local Windows Update history events, including failures and HRESULT values.
+- Narrow history by time range and operation, inspect selected-event error guidance, and copy grouped failure summaries for support handoffs.
 - Inspect and change more than 45 Windows Update and Delivery Optimization settings through an audited policy workbench with build gating, requested/effective state, transactional rollback, and MDM-aware ownership.
 - Review Delivery Optimization CDN, cache, peer, upload, and mode statistics alongside retained WuPilot download/install timings and clearly labeled Windows event estimates.
 - Check stable GitHub releases from the installed app, verify the architecture-specific installer against two SHA-256 sources, and start an in-place upgrade only after confirmation.

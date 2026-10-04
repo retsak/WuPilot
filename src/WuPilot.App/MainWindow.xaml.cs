@@ -1228,22 +1228,57 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private void HistoryFilter_Changed(object sender, RoutedEventArgs e) => ApplyHistoryFilter();
+    private void HistoryRange_Changed(object sender, SelectionChangedEventArgs e) => ApplyHistoryFilter();
+
+    private void ResetHistoryFilters_Click(object sender, RoutedEventArgs e)
+    {
+        HistoryFilterBox.Text = string.Empty;
+        HistoryFailuresOnlyCheck.IsChecked = false;
+        HistoryRangeCombo.SelectedIndex = 0;
+        HistoryOperationCombo.SelectedIndex = 0;
+        ApplyHistoryFilter();
+    }
+
+    private void HistorySelection_Changed(object sender, SelectionChangedEventArgs e) => UpdateHistoryDetails();
+
+    private void UpdateHistoryDetails()
+    {
+        if (HistoryList is null || HistoryDetailsText is null || CopyHistoryDetailsButton is null) return;
+        var selected = HistoryList.SelectedItem as UpdateHistoryItem;
+        var record = selected?.Record;
+        HistoryDetailsText.Text = record is null ? "Select an event to review its description and error guidance." :
+            $"{record.Title ?? "Title unavailable"}\n{record.Date?.ToString("g") ?? "Date unavailable"} · {UpdateHistoryAnalyzer.OperationLabel(record.Operation)} · {selected!.ResultLabel}\nUpdate ID: {record.UpdateId ?? "Unavailable"} · Revision: {record.RevisionNumber?.ToString() ?? "Unavailable"}\nClient: {record.ClientApplicationId ?? "Unavailable"} · Service: {record.ServiceId ?? "Unavailable"}\n{record.Description}\n\n{UpdateHistoryAnalyzer.Guidance(record)}";
+        CopyHistoryDetailsButton.IsEnabled = record is not null;
+    }
+
+    private void CopyHistoryDetails_Click(object sender, RoutedEventArgs e)
+    {
+        if (HistoryList.SelectedItem is not UpdateHistoryItem) return;
+        CopyText(HistoryDetailsText.Text);
+        StatusText.Text = "History event details copied";
+    }
+
+    private void CopyHistoryFailures_Click(object sender, RoutedEventArgs e)
+    {
+        CopyText(UpdateHistoryAnalyzer.BuildFailureSummary(VisibleUpdateHistory.Select(item => item.Record)));
+        StatusText.Text = "Filtered history failure summary copied";
+    }
 
     private void ApplyHistoryFilter()
     {
-        var filter = HistoryFilterBox?.Text.Trim();
-        var failuresOnly = HistoryFailuresOnlyCheck?.IsChecked == true;
-        var matches = _allUpdateHistory.Where(item =>
-            (!failuresOnly || item.ResultCode is 3 or 4 or 5) &&
-            (string.IsNullOrWhiteSpace(filter) ||
-             (item.Title?.Contains(filter, StringComparison.CurrentCultureIgnoreCase) ?? false) ||
-             item.HResultLabel.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-             item.SourceLabel.Contains(filter, StringComparison.CurrentCultureIgnoreCase) ||
-             (item.Record.UpdateId?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false)));
+        if (HistoryFilterBox is null || HistoryRangeCombo is null || HistoryOperationCombo is null || HistoryList is null) return;
+        var selected = (HistoryList.SelectedItem as UpdateHistoryItem)?.Record;
+        _ = int.TryParse(SelectedComboTag(HistoryRangeCombo), out var days);
+        _ = int.TryParse(SelectedComboTag(HistoryOperationCombo), out var operation);
+        var now = _clock?.Now ?? DateTimeOffset.UtcNow;
+        var matches = _allUpdateHistory.Where(item => UpdateHistoryAnalyzer.Matches(item.Record,
+            HistoryFilterBox.Text, HistoryFailuresOnlyCheck?.IsChecked == true, operation, days, now));
         Replace(VisibleUpdateHistory, matches);
+        HistoryList.SelectedItem = VisibleUpdateHistory.FirstOrDefault(item => item.Record == selected);
+        UpdateHistoryDetails();
         if (VisibleHistoryCountText is not null)
         {
-            VisibleHistoryCountText.Text = $"{VisibleUpdateHistory.Count} shown";
+            VisibleHistoryCountText.Text = $"{VisibleUpdateHistory.Count} shown · {VisibleUpdateHistory.Count(item => UpdateHistoryAnalyzer.IsFailure(item.Record))} failures or partial results";
         }
     }
 

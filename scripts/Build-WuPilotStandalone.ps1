@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('x64', 'arm64')][string]$Platform = 'x64',
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.4.5'
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.4.6'
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot

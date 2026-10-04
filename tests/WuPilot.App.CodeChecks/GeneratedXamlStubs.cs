@@ -11,6 +11,11 @@ public partial class App
 
 public sealed partial class MainWindow
 {
+    private readonly ComboBox HistoryRangeCombo = null!;
+    private readonly ComboBox HistoryOperationCombo = null!;
+    private readonly ListView HistoryList = null!;
+    private readonly TextBlock HistoryDetailsText = null!;
+    private readonly Button CopyHistoryDetailsButton = null!;
     private readonly Button AnalyzeBundleButton = null!;
     private readonly TextBlock BundleTimingStatus = null!;
     private readonly TextBox PerformanceUpdateBox = null!;

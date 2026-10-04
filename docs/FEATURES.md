@@ -186,9 +186,13 @@ Every repair action presents a confirmation first and is recorded in **Activity*
 
 ## Update history
 
-The **Update history** tab under **Records** automatically loads up to 500 recent local WUA history records on first opening without starting a new scan. Search covers title, HRESULT, source, and UpdateID. **Failures and partial results only** narrows the view to failed, aborted, or partially successful operations.
+The **Update history** tab under **Records** automatically loads up to 500 recent local WUA history records on first opening without starting a new scan. Search covers title, description, HRESULT, source, and UpdateID. Combine search with **Time range** (all loaded history or the last 7, 30, or 90 days), **Operation** (installation, uninstallation, or other), and **Failures and partial results only**. **Reset filters** restores the complete loaded view. Events without a date remain visible in all loaded history and are excluded from bounded time ranges.
 
 Each row includes date, operation, result, HRESULT, UpdateID, and source/client context. **Copy visible** copies only the currently filtered records. Reading history does not alter it.
+
+Select an event to read its description, UpdateID and revision, and HRESULT guidance from WuPilot's existing error catalog. **Copy event details** copies the selected evidence and suggested next step. Zero HRESULTs are labeled as having no recorded error code; partial or failed results still direct the technician to the event description and logs.
+
+**Copy failure summary** groups the currently filtered failed, aborted, and partially successful events by HRESULT and operation, with event counts, the latest event, and error guidance. Counts represent history events rather than unique updates or unresolved failures. Both filtering and summaries are limited to the loaded history; a time range does not retrieve additional older records.
 
 ## Command center
 

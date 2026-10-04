@@ -47,13 +47,7 @@ public sealed class UpdateHistoryItem(UpdateHistoryRecord record)
     public string? Title => Record.Title;
     public int ResultCode => Record.ResultCode;
     public string DateLabel => Record.Date?.ToString("g") ?? "Date unavailable";
-    public string OperationLabel => Record.Operation switch
-    {
-        1 => "Installation",
-        2 => "Uninstallation",
-        3 => "Other",
-        _ => $"Operation {Record.Operation}"
-    };
+    public string OperationLabel => UpdateHistoryAnalyzer.OperationLabel(Record.Operation);
     public string ResultLabel => Record.ResultCode switch
     {
         2 => "Succeeded",
